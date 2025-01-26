@@ -190,8 +190,9 @@ class Nord:
         # sender.start()
 
         while True:
+            time.sleep(1)
             self.update_sensors()
-            self.step()
+            # self.step()
 
 
 if __name__ == '__main__':
