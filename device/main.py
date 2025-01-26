@@ -4,7 +4,7 @@ import threading
 import cv2
 import sys
 import pynmea2
-import RPi.GPIO as gpio
+# import RPi.GPIO as gpio
 import time
 import psutil
 from queue import Queue
