@@ -53,12 +53,7 @@ class Nord:
 
         self.connection_address = "tcp://*:5555"
 
-        self.sensors = {name: 0 for name in
-                        ['depth_target', 'gx', 'gy', 'temp_on', 'humidity_on', 'pressure_on', 'temp_out', 'depth',
-                         'sat',
-                         'lat', 'lat_dir',
-                         'lon', 'lon_dir',
-                         'speed', 'track', 'cpu_temp', 'cpu_usage', 'time', 'date']}
+        self.sensors = {name: 0 for name in []}
 
         self.depth_pid = PIDController(0.01, 0.0001, 0.1)
         self.depth_pid.set_limit(10, 170)
@@ -113,44 +108,18 @@ class Nord:
         ser_arduino = arduino_connection(self.arduino_address, self.arduino_speed, self.arduino_timeout)
         ser_gps = gps_connection(self.gps_address, self.gps_speed, self.gps_timeout)
         cpu = CPUTemperature()
-
+        print(1)
         while True:
-            if ser_gps and ser_gps.in_waiting > 0:
-                line_gps = ser_gps.readline().decode('utf-8').rstrip()
-                msg = pynmea2.parse(line_gps)
-                if isinstance(msg, pynmea2.GGA):
-                    self.sensors['sat'] = msg.num_sats
-                    self.sensors['lat'] = msg.latitude
-                    self.sensors['lat_dir'] = msg.lat_dir
-                    self.sensors['lon'] = msg.longitude
-                    self.sensors['lon_dir'] = msg.lon_dir
-                if isinstance(msg, pynmea2.VTG):
-                    self.sensors['track'] = msg.true_track
-                    self.sensors['speed'] = msg.spd_over_grnd
-                if isinstance(msg, pynmea2.RMC):
-                    datetime = str(msg.datetime)  # 2024-01-17 16:17:30+00:00
-                    self.sensors['date'] = datetime[:10]
-                    self.sensors['time'] = datetime[11:19]
-
             if ser_arduino and ser_arduino.in_waiting > 0:
                 arduino_data = ser_arduino.readline().decode('utf-8').rstrip().split(';')
-                self.sensors['depth_target'] = float(arduino_data[0])
-                self.sensors['fb'] = float(arduino_data[1])
-                self.sensors['lr'] = float(arduino_data[2])
-                self.sensors['rotate'] = float(arduino_data[3])
-                self.sensors['control_mode'] = float(arduino_data[4])
-                self.sensors['None'] = float(arduino_data[5])
-                self.sensors['gx'] = float(arduino_data[6])
-                self.sensors['gy'] = float(arduino_data[7])
-                self.sensors['temp_on'] = float(arduino_data[8])
-                self.sensors['humidity_on'] = float(arduino_data[9])
-                self.sensors['pressure_on'] = int(arduino_data[10])
-                self.sensors['temp_out'] = float(arduino_data[11])
-                self.sensors['depth'] = int(arduino_data[12])
-                self.sensors['gx_target'] = float(arduino_data[13])
-                self.sensors['gy_target'] = float(arduino_data[14])
-            self.sensors['cpu_temp'] = int(cpu.temperature)
-            self.sensors['cpu_usage'] = int(psutil.cpu_percent())
+                print(arduino_data)
+                # self.sensors['temp_on'] = float(arduino_data[8])
+                # self.sensors['humidity_on'] = float(arduino_data[9])
+                # self.sensors['pressure_on'] = int(arduino_data[10])
+                # self.sensors['temp_out'] = float(arduino_data[11])
+                # self.sensors['depth'] = int(arduino_data[12])
+            # self.sensors['cpu_temp'] = int(cpu.temperature)
+            # self.sensors['cpu_usage'] = int(psutil.cpu_percent())
 
     def step(self):
         depth_speed = self.depth_pid.compute(self.get_sensors('depth'), self.get_sensors('depth_target'))
@@ -213,15 +182,15 @@ class Nord:
             self.send_data()
 
     def start(self):
-        camera = threading.Thread(target=self.thread_camera)
-        sender = threading.Thread(target=self.thread_sender)
-        log = threading.Thread(target=self.thread_log)
-
-        camera.start()
-        sender.start()
-        log.start()
+        # camera = threading.Thread(target=self.thread_camera)
+        # sender = threading.Thread(target=self.thread_sender)
+        # log = threading.Thread(target=self.thread_log)
+        #
+        # camera.start()
+        # sender.start()
 
         while True:
+            self.update_sensors()
             self.step()
 
 
