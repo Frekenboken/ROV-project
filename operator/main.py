@@ -1,11 +1,12 @@
-import socket
 from PySide6.QtCore import QThread, Signal, QSize
-from PySide6.QtGui import QImage, QPixmap, QColor, Qt, QIntList
-from PySide6.QtWidgets import QApplication, QMainWindow, QSizePolicy, QDialog
-from UI import Ui_MainWindow
+from PySide6.QtGui import QImage, QPixmap, QColor, Qt
+from PySide6.QtWidgets import QApplication, QMainWindow
+
+from designs.UI import Ui_MainWindow
+
 import sys
-from Widgets.CircularBar import QCircularBar
-from Widgets.AngleBar import QAngleBar
+from widgets.CircularBar import QCircularBar
+from widgets.AngleBar import QAngleBar
 import cv2
 from numpy import frombuffer, uint8
 import base64
