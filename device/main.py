@@ -33,15 +33,15 @@ def close_context(context):
 
 class Nord:
     def __init__(self, motor_pins, servo_pins, camera_pin):
-        self.motors = (Servo(motor_pins[0]),
-                       Servo(motor_pins[1]),
-                       Servo(motor_pins[2]),
-                       Servo(motor_pins[3]))
-        self.servos = (Servo(servo_pins[0]),
-                       Servo(servo_pins[1]),
-                       Servo(servo_pins[2]),
-                       Servo(servo_pins[3]))
-        self.camera_servo = Servo(camera_pin)
+        # self.motors = (Servo(motor_pins[0]),
+        #                Servo(motor_pins[1]),
+        #                Servo(motor_pins[2]),
+        #                Servo(motor_pins[3]))
+        # self.servos = (Servo(servo_pins[0]),
+        #                Servo(servo_pins[1]),
+        #                Servo(servo_pins[2]),
+        #                Servo(servo_pins[3]))
+        # self.camera_servo = Servo(camera_pin)
 
         self.ser = serial.Serial('/dev/ttyUSB0', 38400, timeout=1)
 
