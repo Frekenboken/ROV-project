@@ -13,16 +13,7 @@ import cv2
 import base64
 import serial
 
-from connections import gps_connection, arduino_connection
 from PID import PIDController
-
-def arduino_connection(address, speed, timeout):
-    try:
-        serArduino = serial.Serial(address, speed, timeout)
-        serArduino.flush()
-        return serArduino
-    except:
-        return None
 
 
 def millis():
