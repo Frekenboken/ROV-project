@@ -184,44 +184,48 @@ class ReceiveThread(QThread):
 
     def run(self):
         try:
+            context = zmq.Context()
+            socket = context.socket(zmq.REQ)
+            socket.connect("tcp://localhost:5555")  # Подключаемся к серверу на порту 5555
             while True:
-                if self.cl:
-                    break
-                if self.req:
-                    self.socket, self.context = self.zmq_connect_to(self.address)
-                    print('new')
-                    self.req = False
-                    self.connection = True
-                if not self.connection:
-                    continue
+                # Пример списка данных для отправки
+                data_list = [1, 2, 3, 4, 5]
 
-                print('go')
-                # time.sleep(0.4)
-                print('кидаю респонс')
-                self.socket.send_string(self.response)
-                print('скинул респонс')
-                print('получаю дату')
-                data = self.socket.recv_pyobj()
-                print('Получил дату')
+                # Отправляем запрос серверу
+                socket.send_pyobj(data_list)
+                print(f"Отправлен запрос: {data_list}")
 
-                # Декодирование изображения из base64
-                image_bytes = base64.b64decode(data['image'])
-                frame = cv2.imdecode(frombuffer(image_bytes, uint8), cv2.IMREAD_COLOR)
+                # Получаем ответ от сервера
+                response = socket.recv_pyobj()
+                print(f"Получен ответ: {response}")
 
-                # Используйте данные из списка, например:
-                data_dict = data['data_dict']
-                print("Received Data List:", data_dict)
-
-                # Отображение изображения
-                # time.sleep(0.1)
-
-                rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                h, w, ch = rgb_image.shape
-                bytes_per_line = ch * w
-                convert_to_qt_format = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
-                p = convert_to_qt_format.scaled(960, 540, Qt.KeepAspectRatio)
-                self.change_pixmap_signal.emit(p)
-                self.update_data_signal.emit(data_dict)
+                # print('go')
+                # # time.sleep(0.4)
+                # print('кидаю респонс')
+                # self.socket.send_string(self.response)
+                # print('скинул респонс')
+                # print('получаю дату')
+                # data = self.socket.recv_pyobj()
+                # print('Получил дату')
+                #
+                # # Декодирование изображения из base64
+                # image_bytes = base64.b64decode(data['image'])
+                # frame = cv2.imdecode(frombuffer(image_bytes, uint8), cv2.IMREAD_COLOR)
+                #
+                # # Используйте данные из списка, например:
+                # data_dict = data['data_dict']
+                # print("Received Data List:", data_dict)
+                #
+                # # Отображение изображения
+                # # time.sleep(0.1)
+                #
+                # rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                # h, w, ch = rgb_image.shape
+                # bytes_per_line = ch * w
+                # convert_to_qt_format = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
+                # p = convert_to_qt_format.scaled(960, 540, Qt.KeepAspectRatio)
+                # self.change_pixmap_signal.emit(p)
+                # self.update_data_signal.emit(data_dict)
         except zmq.ZMQError as e:
             print(f"Ошибка ZeroMQ: {e}")
 
