@@ -78,7 +78,7 @@ class Gui(QMainWindow):
         self.ui.diffframe.layout().addWidget(self.diff_indicator)
 
         # Создаем и запускаем поток для видео
-        self.receive_thread = ReceiveThread("tcp://10.42.0.1:5555")
+        self.receive_thread = ReceiveThread("tcp://localhost:5555")
         self.receive_thread.change_pixmap_signal.connect(self.update_image)
         self.receive_thread.update_data_signal.connect(self.update_data)
         self.receive_thread.start()
