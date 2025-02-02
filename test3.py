@@ -1,42 +1,33 @@
-import cv2
 import zmq
+import cv2
 import numpy as np
-import time
 
 def main():
     context = zmq.Context()
-    video_socket = context.socket(zmq.PUB)
-    video_socket.bind("tcp://*:5555")  # Порт для передачи видео
+    socket = context.socket(zmq.REP)
+    socket.bind("tcp://*:5555")
 
-    control_socket = context.socket(zmq.REP)
-    control_socket.bind("tcp://*:5556")  # Порт для получения управляющих сигналов
-
-    cap = cv2.VideoCapture(0)  # Захват видео с камеры
-
-    print("Сервер запущен и ожидает запросы...")
+    cap = cv2.VideoCapture(0)
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
-        # Отправляем изображение
-        frame = cv2.resize(frame, (640, 480))  # Изменяем размер изображения для уменьшения объема данных
-        image = cv2.imencode('.jpg', frame)[1].tobytes()
-        video_socket.send(image)
+        # Преобразуем изображение в формат, подходящий для передачи
+        _, buffer = cv2.imencode('.jpg', frame)
+        jpg_as_text = buffer.tobytes()
 
-        # Проверяем наличие управляющих сигналов
-        if control_socket.poll(1000) >= 0:  # Таймаут 1 секунда
-            control_message = control_socket.recv_pyobj()
-            print(f"Получен управляющий сигнал: {control_message}")
+        # Принимаем управляющий сигнал от клиента
+        message = socket.recv_json()
+        print(f"Received control signal: {message}")
 
-            # Отправляем ответ клиенту (например, подтверждение получения сигнала)
-            response = {"status": "received"}
-            control_socket.send_pyobj(response)
+        # Отправляем изображение клиенту
+        socket.send(jpg_as_text, flags=zmq.SNDMORE)
+        socket.send_json({"status": "ok"})
 
     cap.release()
-    video_socket.close()
-    control_socket.close()
+    socket.close()
     context.term()
 
 if __name__ == "__main__":
