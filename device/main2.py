@@ -22,7 +22,12 @@ def main():
     socket.bind("tcp://*:5555")
 
     cap = cv2.VideoCapture(0)
-    ser = serial.Serial('/dev/ttyUSB0', 38400, timeout=1)
+
+    try:
+        ser = serial.Serial('/dev/ttyUSB0', 38400, timeout=1)
+    except Exception as e:
+        print("Error:", e)
+        ser = None
 
     depth_pid = PIDController(0.01, 0.0001, 0.1)
     depth_pid.set_limit(10, 170)
@@ -61,7 +66,7 @@ def main():
         socket.send_json({"cpu_temperature": psutil.sensors_temperatures(),
                           "cpu_usage": int(psutil.cpu_percent())})
 
-        if ser.in_waiting > 0:
+        if ser and ser.in_waiting > 0:
             line = ser.readline().decode('utf-8').rstrip()
             print(f"Received: {line}")
 
