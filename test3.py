@@ -1,6 +1,7 @@
 import cv2
 import zmq
 import numpy as np
+import time
 
 def main():
     context = zmq.Context()
