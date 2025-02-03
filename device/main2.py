@@ -1,126 +1,157 @@
 import os
-
-from piservo import Servo
-from gpiozero import CPUTemperature
-import threading
 import cv2
-import sys
-import pynmea2
-import RPi.GPIO as gpio
+import zmq
+import serial
 import time
 import psutil
-import zmq
-import cv2
-import base64
-import serial
 import numpy as np
-
+from threading import Thread
+from piservo import Servo
+import RPi.GPIO as gpio
+from gpiozero import CPUTemperature
 from PID import PIDController
 
+# Параметры камеры
+CAMERA_INDEX = 0
+FRAME_WIDTH, FRAME_HEIGHT, FPS = 640, 480, 30
 
-def main():
-    print("Initialization... (5 sec)")
+# Настройки сервера
+ZMQ_PORT = 5555
+SERIAL_PORT = "/dev/ttyUSB0"
+SERIAL_BAUDRATE = 115200
+SERIAL_TIMEOUT = 1
+SHOW_MEMORY_USAGE_EVERY = 100  # Период вывода памяти в циклах
 
-    context = zmq.Context()
-    socket = context.socket(zmq.REP)
-    socket.bind("tcp://*:5555")
+# PID-контроллеры
+depth_pid = PIDController(0.01, 0.0001, 0.1)
+depth_pid.set_limit(10, 170)
+depth_pid.set_offset(90)
 
-    # Настройки камеры
-    cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 30)
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+roll_pid = PIDController(0.01, 0.0001, 0.1)
+roll_pid.set_limit(-5, 5)
+roll_pid.set_offset(0)
 
-    ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=1)
+pitch_pid = PIDController(0.01, 0.0001, 0.1)
+pitch_pid.set_limit(-5, 5)
+pitch_pid.set_offset(0)
 
-    depth_pid = PIDController(0.01, 0.0001, 0.1)
-    depth_pid.set_limit(10, 170)
-    depth_pid.set_offset(90)
+# Сервоприводы
+servos = [Servo(18), Servo(18), Servo(18), Servo(18)]
+motors = [Servo(19), Servo(19), Servo(19), Servo(19)]
 
-    roll_pid = PIDController(0.01, 0.0001, 0.1)
-    roll_pid.set_limit(-5, 5)
-    roll_pid.set_offset(0)
+# Инициализация камеры
+cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_V4L2)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
+cap.set(cv2.CAP_PROP_FPS, FPS)
+cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
 
-    pitch_pid = PIDController(0.01, 0.0001, 0.1)
-    pitch_pid.set_limit(-5, 5)
-    pitch_pid.set_offset(0)
+# Подключение к Arduino
+try:
+    ser = serial.Serial(SERIAL_PORT, SERIAL_BAUDRATE, timeout=SERIAL_TIMEOUT)
+    time.sleep(2)  # Ожидание стабилизации соединения
+except Exception as e:
+    print(f"Ошибка подключения к Arduino: {e}")
+    ser = None
 
-    servos = [Servo(18), Servo(18),
-              Servo(18), Servo(18)]
-    motors = [Servo(19), Servo(19),
-              Servo(19), Servo(19)]
+# Настройка ZeroMQ
+context = zmq.Context()
+socket = context.socket(zmq.REP)
+socket.bind(f"tcp://*:{ZMQ_PORT}")
 
-    data = []
-
-    for i in range(10):
-        if ser.in_waiting > 0:
-            break
-        time.sleep(0.5)
-    else:
-        raise Exception
-
-    print("Ready!")
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        # Преобразуем изображение в формат, подходящий для передачи
-        _, buffer = cv2.imencode('.jpg', frame)
-        jpg_as_text = buffer.tobytes()
-
-        # Принимаем управляющий сигнал от клиента
-        message = socket.recv_json()
-        print(f"Received control signal: {message}")
-
-        # Чтение данных с Arduino
-        arduino_data = [None] * 8  # Дефолтные значения
-        if ser.in_waiting > 0:
-            try:
-                line = ser.readline().decode('utf-8').rstrip()
-                arduino_data = line.split(",")
-                if len(arduino_data) < 8:
-                    arduino_data = [None] * 8
-                print(f"Received: {line}")
-            except Exception as e:
-                print(f"Serial read error: {e}")
-
-        # Отправляем изображение клиенту
-        socket.send(jpg_as_text, flags=zmq.SNDMORE)
-        socket.send_json({"cpu_temperature": psutil.sensors_temperatures()["cpu_thermal"][0][1],
-                          "cpu_usage": int(psutil.cpu_percent()),
-                          "depth": arduino_data[0],
-                          "gx": arduino_data[0],
-                          "gy": arduino_data[0],
-                          "in_temperature": arduino_data[0],
-                          "in_humidity": arduino_data[0],
-                          "in_pressure": arduino_data[0],
-                          "out_temperature": arduino_data[0]})
-
-        # STEP
-        # depth_speed = depth_pid.compute(get_sensors('depth'), get_sensors('depth_target'))
-        # roll_speed = roll_pid.compute(get_sensors('gx'), get_sensors('gx_target'))
-        # pitch_speed = pitch_pid.compute(get_sensors('gy'), get_sensors('gy_target'))
-
-        # servos[0].write(depth_speed - roll_speed + pitch_speed)  # lf
-        # servos[1].write(depth_speed + roll_speed + pitch_speed)  # rf
-        # servos[2].write(depth_speed - roll_speed - pitch_speed)  # lb
-        # servos[3].write(depth_speed + roll_speed - pitch_speed)  # rb
-
-        # Получаем текущий процесс
-        process = psutil.Process(os.getpid())
-
-        # Получаем использование памяти в байтах
-        memory_info = process.memory_info()
-        print(f"RSS: {memory_info.rss} bytes")
-        print(f"VMS: {memory_info.vms} bytes")
-
-    cap.release()
-    socket.close()
-    context.term()
+# Флаг работы потока
+running = True
 
 
-if __name__ == "__main__":
-    main()
+def read_arduino_data():
+    """Читает данные с Arduino."""
+    if not ser:
+        return [None] * 8  # Если нет соединения, возвращаем пустые данные
+
+    try:
+        line = ser.readline().decode("utf-8").strip()
+        data = line.split(",")
+        return data if len(data) >= 8 else [None] * 8
+    except Exception as e:
+        print(f"Ошибка чтения с Arduino: {e}")
+        return [None] * 8
+
+
+def pid_control_loop():
+    """Фоновый поток для расчетов PID."""
+    while running:
+        print('c')
+        # depth = 100  # Заглушка (здесь нужно получать реальные данные)
+        # gx = 0
+        # gy = 0
+        #
+        # depth_speed = depth_pid.compute(depth, 120)  # 120 - пример целевого значения
+        # roll_speed = roll_pid.compute(gx, 0)
+        # pitch_speed = pitch_pid.compute(gy, 0)
+        #
+        # servos[0].write(depth_speed - roll_speed + pitch_speed)
+        # servos[1].write(depth_speed + roll_speed + pitch_speed)
+        # servos[2].write(depth_speed - roll_speed - pitch_speed)
+        # servos[3].write(depth_speed + roll_speed - pitch_speed)
+
+        time.sleep(0.05)  # Регулируем частоту выполнения
+
+
+# Запуск PID в отдельном потоке
+pid_thread = Thread(target=pid_control_loop, daemon=True)
+pid_thread.start()
+
+print("Сервер запущен!")
+
+frame_count = 0
+
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        print("Ошибка чтения кадра с камеры!")
+        continue
+
+    # Кодируем изображение в JPEG
+    _, buffer = cv2.imencode(".jpg", frame)
+    jpg_as_text = buffer.tobytes()
+
+    try:
+        if socket.poll(1000):  # Ожидаем сообщение от клиента
+            message = socket.recv_json()
+            print(f"Получен запрос: {message}")
+
+            # Читаем данные с Arduino
+            arduino_data = read_arduino_data()
+
+            # Отправляем изображение + JSON
+            socket.send_multipart(
+                [jpg_as_text,
+                 str({
+                     "cpu_temperature": psutil.sensors_temperatures()["cpu_thermal"][0][1],
+                     "cpu_usage": int(psutil.cpu_percent()),
+                     "depth": arduino_data[0],
+                     "gx": arduino_data[1],
+                     "gy": arduino_data[2],
+                     "in_temperature": arduino_data[3],
+                     "in_humidity": arduino_data[4],
+                     "in_pressure": arduino_data[5],
+                     "out_temperature": arduino_data[6]
+                 }).encode()]
+            )
+
+        # Вывод информации о памяти каждые N циклов
+        if frame_count == SHOW_MEMORY_USAGE_EVERY:
+            memory_info = psutil.Process(os.getpid()).memory_info()
+            print(f"RSS: {memory_info.rss / 1024 / 1024:.2f} MB, VMS: {memory_info.vms / 1024 / 1024:.2f} MB")
+            frame_count = 0
+
+        frame_count += 1
+
+    except Exception as e:
+        print(f"Ошибка связи с клиентом: {e}")
+
+cap.release()
+socket.close()
+context.term()
+running = False
+pid_thread.join()
