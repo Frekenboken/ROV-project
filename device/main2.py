@@ -1,3 +1,5 @@
+import os
+
 from piservo import Servo
 from gpiozero import CPUTemperature
 import threading
@@ -94,6 +96,14 @@ def main():
         # servos[1].write(depth_speed + roll_speed + pitch_speed)  # rf
         # servos[2].write(depth_speed - roll_speed - pitch_speed)  # lb
         # servos[3].write(depth_speed + roll_speed - pitch_speed)  # rb
+
+        # Получаем текущий процесс
+        process = psutil.Process(os.getpid())
+
+        # Получаем использование памяти в байтах
+        memory_info = process.memory_info()
+        print(f"RSS: {memory_info.rss} bytes")
+        print(f"VMS: {memory_info.vms} bytes")
 
     cap.release()
     socket.close()
