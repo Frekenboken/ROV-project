@@ -66,15 +66,15 @@ running = True
 def read_arduino_data():
     """Читает данные с Arduino."""
     if not ser:
-        return [None] * 8  # Если нет соединения, возвращаем пустые данные
+        return [None] * 7  # Если нет соединения, возвращаем пустые данные
 
     try:
         line = ser.readline().decode("utf-8").strip()
         data = line.split(",")
-        return data if len(data) >= 8 else [None] * 8
+        return data if len(data) >= 7 else [None] * 7
     except Exception as e:
         print(f"Ошибка чтения с Arduino: {e}")
-        return [None] * 8
+        return [None] * 7
 
 
 def pid_control_loop():
@@ -116,28 +116,27 @@ while True:
     jpg_as_text = buffer.tobytes()
 
     try:
-        if socket.poll(1000):  # Ожидаем сообщение от клиента
-            message = socket.recv_json()
-            print(f"Получен запрос: {message}")
+        message = socket.recv_json()
+        print(f"Получен запрос: {message}")
 
-            # Читаем данные с Arduino
-            arduino_data = read_arduino_data()
+        # Читаем данные с Arduino
+        arduino_data = read_arduino_data()
 
-            # Отправляем изображение + JSON
-            socket.send_multipart(
-                [jpg_as_text,
-                 str({
-                     "cpu_temperature": psutil.sensors_temperatures()["cpu_thermal"][0][1],
-                     "cpu_usage": int(psutil.cpu_percent()),
-                     "depth": arduino_data[0],
-                     "gx": arduino_data[1],
-                     "gy": arduino_data[2],
-                     "in_temperature": arduino_data[3],
-                     "in_humidity": arduino_data[4],
-                     "in_pressure": arduino_data[5],
-                     "out_temperature": arduino_data[6]
-                 }).encode()]
-            )
+        # Отправляем изображение + JSON
+        socket.send_multipart(
+            [jpg_as_text,
+             str({
+                 "cpu_temperature": psutil.sensors_temperatures()["cpu_thermal"][0][1],
+                 "cpu_usage": int(psutil.cpu_percent()),
+                 "depth": arduino_data[0],
+                 "gx": arduino_data[1],
+                 "gy": arduino_data[2],
+                 "in_temperature": arduino_data[3],
+                 "in_humidity": arduino_data[4],
+                 "in_pressure": arduino_data[5],
+                 "out_temperature": arduino_data[6]
+             }).encode()]
+        )
 
         # Вывод информации о памяти каждые N циклов
         if frame_count == SHOW_MEMORY_USAGE_EVERY:
