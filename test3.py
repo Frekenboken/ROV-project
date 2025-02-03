@@ -3,64 +3,43 @@ import cv2
 import pickle
 import struct
 
-# Настройки сервера
-HOST = '192.168.0.9'
-PORT = 65432
+def server(host='192.168.0.9', port=5000):
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind((host, port))
+    server_socket.listen(5)
+    print(f"Сервер запущен на {host}:{port}, ожидаем подключение...")
 
-# Создание сокета
-server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server_socket.bind((HOST, PORT))
-server_socket.listen(5)
-print(f"Сервер слушает на {HOST}:{PORT}")
+    conn, addr = server_socket.accept()
+    print(f"Клиент подключился: {addr}")
 
-# Захват видео с камеры
-cap = cv2.VideoCapture(0)
-
-# Функция для отправки данных клиенту
-def send_data(client_socket, data):
-    data_pickle = pickle.dumps(data)
-    a = len(data_pickle)
-    a1 = struct.pack(">I", a)
-    client_socket.sendall(a1 + data_pickle)
-
-# Функция для получения данных от клиента
-def recv_data(client_socket):
-    data = b""
-    payload_size = struct.calcsize(">I")
-    while len(data) < payload_size:
-        packet = client_socket.recv(4 * 1024)  # 4K
-        if not packet:
-            return None
-        data += packet
-    packed_msg_size = data[:payload_size]
-    data = data[payload_size:]
-    msg_size = struct.unpack(">I", packed_msg_size)[0]
-    while len(data) < msg_size:
-        data += client_socket.recv(4 * 1024)
-    frame_data = data[:msg_size]
-    data = data[msg_size:]
-    frame = pickle.loads(frame_data)
-    return frame
-
-while True:
-    client_socket, addr = server_socket.accept()
-    print(f"Подключение от {addr}")
+    cap = cv2.VideoCapture(0)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
-        # Отправка изображения клиенту
-        send_data(client_socket, frame)
+        data_list = ["command1", "command2", 42]
 
-        # Получение управляющих сигналов от клиента
-        control_signal = recv_data(client_socket)
-        if control_signal is None:
+        data = pickle.dumps((frame, data_list))
+        message_size = struct.pack("Q", len(data))
+
+        try:
+            conn.sendall(message_size + data)
+
+            control_data_size = struct.unpack("Q", conn.recv(8))[0]
+            control_data = conn.recv(control_data_size)
+            control_signals = pickle.loads(control_data)
+            print(f"Получены управляющие сигналы: {control_signals}")
+        except:
             break
-        print(f"Получен управляющий сигнал: {control_signal}")
 
-    client_socket.close()
+    cap.release()
+    conn.close()
+    server_socket.close()
+    print("Сервер завершил работу.")
 
-cap.release()
-server_socket.close()
+if __name__ == "__main__":
+    server()
