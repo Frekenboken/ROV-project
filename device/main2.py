@@ -63,18 +63,25 @@ socket.bind(f"tcp://*:{ZMQ_PORT}")
 running = True
 
 
-def read_arduino_data():
-    """Читает данные с Arduino."""
-    if not ser:
-        return [None] * 7  # Если нет соединения, возвращаем пустые данные
+def read_arduino():
+    """Читает последние актуальные данные с Arduino, очищая буфер"""
+    ser.reset_input_buffer()  # Очищаем входной буфер перед чтением
+    # time.sleep(0.05)  # Даем время на приход новых данных
 
-    try:
-        line = ser.readline().decode("utf-8").strip()
-        data = line.split(",")
-        return data if len(data) >= 7 else [None] * 7
-    except Exception as e:
-        print(f"Ошибка чтения с Arduino: {e}")
-        return [None] * 7
+    if ser.in_waiting > 0:
+        try:
+            line = ser.readline().decode("utf-8").strip()
+            data = line.split(",")
+
+            if len(data) < 7:
+                return [None] * 7  # Защита от неполных данных
+
+            print(f"Arduino: {line}")  # Логирование данных
+            return data
+        except Exception as e:
+            print(f"Ошибка чтения с Arduino: {e}")
+
+    return [None] * 7  # Если данных нет, возвращаем пустой список
 
 
 def pid_control_loop():
