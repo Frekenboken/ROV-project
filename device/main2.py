@@ -99,7 +99,7 @@ def pid_control_loop():
 
 # Запуск PID в отдельном потоке
 pid_thread = Thread(target=pid_control_loop, daemon=True)
-pid_thread.start()
+# pid_thread.start()
 
 print("Сервер запущен!")
 
