@@ -66,12 +66,14 @@ def main():
             _, buffer = cv2.imencode('.jpg', frame)
             jpg_as_text = buffer.tobytes()
 
-            # Неблокирующий прием команды от клиента
-            try:
-                message = socket.recv_json(flags=zmq.NOBLOCK)
-                print(f"Received control signal: {message}")
-            except zmq.Again:
-                pass  # Нет входящих сообщений
+            # Проверяем, есть ли данные от клиента
+            if socket.poll(100) & zmq.POLLIN:
+                try:
+                    message = socket.recv_json()
+                    print(f"Received control signal: {message}")
+                except zmq.ZMQError as e:
+                    print(f"ZMQ recv error: {e}")
+                    continue
 
             # Чтение данных с Arduino
             arduino_data = [None] * 8  # Дефолтные значения
@@ -91,18 +93,24 @@ def main():
             except:
                 cpu_temp = None
 
-            socket.send(jpg_as_text, flags=zmq.SNDMORE)
-            socket.send_json({
-                "cpu_temperature": cpu_temp,
-                "cpu_usage": psutil.cpu_percent(),
-                "depth": arduino_data[0],
-                "gx": arduino_data[1],
-                "gy": arduino_data[2],
-                "in_temperature": arduino_data[3],
-                "in_humidity": arduino_data[4],
-                "in_pressure": arduino_data[5],
-                "out_temperature": arduino_data[6]
-            })
+            try:
+                socket.send(jpg_as_text, flags=zmq.SNDMORE)
+                socket.send_json({
+                    "cpu_temperature": cpu_temp,
+                    "cpu_usage": psutil.cpu_percent(),
+                    "depth": arduino_data[0],
+                    "gx": arduino_data[1],
+                    "gy": arduino_data[2],
+                    "in_temperature": arduino_data[3],
+                    "in_humidity": arduino_data[4],
+                    "in_pressure": arduino_data[5],
+                    "out_temperature": arduino_data[6]
+                })
+            except zmq.ZMQError as e:
+                print(f"ZMQ send error: {e}, recreating socket...")
+                socket.close()
+                socket = context.socket(zmq.REP)
+                socket.bind("tcp://*:5555")
 
             # STEP
             # depth_speed = depth_pid.compute(get_sensors('depth'), get_sensors('depth_target'))
