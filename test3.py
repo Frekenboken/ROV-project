@@ -4,7 +4,7 @@ import pickle
 import struct
 
 # Настройки сервера
-HOST = '127.0.0.1'
+HOST = '192.168.0.9'
 PORT = 65432
 
 # Создание сокета
