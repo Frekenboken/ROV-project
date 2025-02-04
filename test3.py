@@ -3,35 +3,28 @@ import zmq
 import json
 import time
 
-# Настройка ZeroMQ
 context = zmq.Context()
-socket = context.socket(zmq.REP)  # Ответный сокет
-socket.bind("tcp://0.0.0.0:5555")  # Сервер слушает на порту 5555
+socket = context.socket(zmq.PUB)  # Паблишер (широковещательная передача)
+socket.bind("tcp://0.0.0.0:5555")
+socket.setsockopt(zmq.SNDHWM, 1)  # Ограничиваем буфер до 1 сообщения
 
-camera = cv2.VideoCapture(0)  # Открываем камеру
-camera.set(cv2.CAP_PROP_FPS, 30)  # Попытка выставить 30 FPS
+camera = cv2.VideoCapture(0)
+camera.set(cv2.CAP_PROP_FPS, 30)
 print("Сервер запущен на порту 5555")
 
 while True:
-    try:
-        message = socket.recv_json()  # Ждём запрос от клиента
-        command = message.get("command", "noop")
+    ret, frame = camera.read()
+    if not ret:
+        continue
 
-        ret, frame = camera.read()  # Захватываем кадр
-        if not ret:
-            continue  # Если не удалось получить кадр — пропускаем
+    _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+    img_bytes = buffer.tobytes()
 
-        _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
-        img_bytes = buffer.tobytes()  # Кодируем в JPEG
+    # Данные для отправки
+    response = {
+        "info": {"temp": 22.5, "status": "active"},
+        "image": img_bytes,  # Передаём в чистом `bytes`, без HEX!
+    }
 
-        # Ответ клиенту
-        response = {
-            "status": "ok",
-            "command_received": command,
-            "info": {"temp": 22.5, "status": "active"},
-            "image": img_bytes.hex(),  # Преобразуем в HEX
-        }
-        socket.send_json(response)  # Отправляем ответ
-    except Exception as e:
-        print(f"Ошибка: {e}")
-        time.sleep(1)  # Мини-пауза при ошибке
+    socket.send_json(response)  # Отправляем последним клиентам
+    time.sleep(0.03)  # Ограничиваем до 30 FPS
