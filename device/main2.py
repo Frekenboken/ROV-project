@@ -43,15 +43,6 @@ cap = cv2.VideoCapture(0)
 ser = serial.Serial(SERIAL_PORT, SERIAL_BAUDRATE, timeout=SERIAL_TIMEOUT)
 time.sleep(2)  # Ожидание стабилизации соединения
 
-# Настройка ZeroMQ
-context = zmq.Context()
-socket = context.socket(zmq.PAIR)
-socket.bind(f"tcp://*:5555")
-
-context2 = zmq.Context()
-socket2 = context2.socket(zmq.PAIR)
-socket2.bind("tcp://*:5556")
-
 
 def map_value(value, from_min, from_max, to_min, to_max):
     # Проверяем, чтобы значения в исходном диапазоне не совпадали
@@ -63,6 +54,12 @@ def map_value(value, from_min, from_max, to_min, to_max):
     to_range = to_max - to_min
     scaled_value = (value - from_min) / from_range  # Нормализуем значение
     return to_min + (scaled_value * to_range)  # Преобразуем в новый диапазон
+
+
+# Функция для установки угла для каждого сервомотора
+def set_angle(pwm, angle):
+    duty = (angle / 18) + 2  # Преобразуем угол в коэффициент заполнения
+    pwm.ChangeDutyCycle(duty)
 
 
 def read_arduino():
@@ -84,6 +81,10 @@ def read_arduino():
 
 
 def cam_and_data_send():
+    context = zmq.Context()
+    socket = context.socket(zmq.PAIR)
+    socket.bind(f"tcp://*:5555")
+
     while True:
         suc, frame = cap.read()
         if not suc:
@@ -113,26 +114,54 @@ def cam_and_data_send():
 
 
 def control_send():
+    context2 = zmq.Context()
+    socket2 = context2.socket(zmq.PAIR)
+    socket2.bind("tcp://*:5556")
+
+    gpio.setwarnings(False)
+    gpio.setmode(gpio.BCM)
+
+    # Настройка GPIO пинов для ШИМ
+    pins = [19, 20, 21, 22]
+    for pin in pins:
+        gpio.setup(pin, gpio.OUT)
+
+    # Создаем объекты PWM для каждого пина с частотой 50 Гц
+    pwm_instances = [gpio.PWM(pin, 50) for pin in pins]
+
+    # Запуск ШИМ сигналов с начальной шириной импульса 0%
+    for pwm in pwm_instances:
+        pwm.start(0)
+
     while True:
-        response = socket2.recv_pyobj()
-        print(response)
-        data = {'status': 'ok'}
-        socket2.send_pyobj(data)
+        try:
+            response = socket2.recv_pyobj()
+            print(response)
+            data = {'status': 'ok'}
+            socket2.send_pyobj(data)
 
-        servos[0].write(map_value(float(response['x']), -1, 1, 0, 180))
+            # servos[0].write(map_value(float(response['x']), -1, 1, 0, 180))
 
-        # depth = 100  # Заглушка (здесь нужно получать реальные данные)
-        # gx = 0
-        # gy = 0
-        #
-        # depth_speed = depth_pid.compute(depth, 120)  # 120 - пример целевого значения
-        # roll_speed = roll_pid.compute(gx, 0)
-        # pitch_speed = pitch_pid.compute(gy, 0)
-        #
-        # servos[0].write(depth_speed - roll_speed + pitch_speed)
-        # servos[1].write(depth_speed + roll_speed + pitch_speed)
-        # servos[2].write(depth_speed - roll_speed - pitch_speed)
-        # servos[3].write(depth_speed + roll_speed - pitch_speed)
+            # depth = 100  # Заглушка (здесь нужно получать реальные данные)
+            # gx = 0
+            # gy = 0
+            #
+            # depth_speed = depth_pid.compute(depth, 120)  # 120 - пример целевого значения
+            # roll_speed = roll_pid.compute(gx, 0)
+            # pitch_speed = pitch_pid.compute(gy, 0)
+            #
+            # servos[0].write(depth_speed - roll_speed + pitch_speed)
+            # servos[1].write(depth_speed + roll_speed + pitch_speed)
+            # servos[2].write(depth_speed - roll_speed - pitch_speed)
+            # servos[3].write(depth_speed + roll_speed - pitch_speed)
+
+            for pwm in pwm_instances:
+                set_angle(pwm, map_value(float(response['x']), -1, 1, 0, 180))
+
+        except KeyboardInterrupt:
+            for pwm in pwm_instances:
+                pwm.stop()  # Останавливаем ШИМ на всех портах
+            gpio.cleanup()  # Очистка GPIO
 
 
 cdt = Thread(target=cam_and_data_send)
