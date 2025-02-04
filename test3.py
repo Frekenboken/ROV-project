@@ -1,49 +1,54 @@
 import asyncio
-import json
 import cv2
 import numpy as np
-import aiohttp
-from aiohttp import web
+import websockets
+import json
 
-# Глобальные переменные
-camera = cv2.VideoCapture(0)  # Камера
-clients = set()  # Подключенные клиенты
+camera = cv2.VideoCapture(0)
+clients = set()
 
-async def handle_request(request):
-    """ Обработчик запросов от клиента """
-    try:
-        data = await request.json()
-        command = data.get("command", "noop")  # Получаем команду
-        response_data = {"status": "ok", "received_command": command}
-
-        # Захватываем кадр с камеры
+async def send_data(websocket):
+    """ Отправка изображения и данных клиенту """
+    while True:
         ret, frame = camera.read()
         if not ret:
-            response_data["error"] = "Failed to capture frame"
-        else:
-            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            response_data["image"] = buffer.tobytes().hex()  # Отправляем кадр в hex-формате
+            continue
 
-        response_data["info"] = {"temp": 22.5, "status": "active"}  # Пример данных
+        _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+        img_bytes = buffer.tobytes()
 
-        return web.json_response(response_data)
-    except Exception as e:
-        return web.json_response({"error": str(e)})
+        data = {
+            "info": {"temp": 22.5, "status": "active"},
+            "image": img_bytes.hex()
+        }
 
-async def start_server():
-    """ Запуск сервера """
-    app = web.Application()
-    app.router.add_post("/control", handle_request)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8080)
-    await site.start()
-    print("Сервер запущен на порту 8080")
+        try:
+            await websocket.send(json.dumps(data))
+        except:
+            break  # Клиент отключился
+        await asyncio.sleep(0.033)  # ~30 FPS
+
+async def handle_client(websocket, path):
+    """ Обработка соединения с клиентом """
+    clients.add(websocket)
+    print(f"Клиент подключен: {len(clients)}")
+
+    try:
+        send_task = asyncio.create_task(send_data(websocket))
+        async for message in websocket:
+            command = json.loads(message).get("command", "noop")
+            print(f"Получена команда: {command}")
+    except:
+        pass
+    finally:
+        send_task.cancel()
+        clients.remove(websocket)
+        print(f"Клиент отключен: {len(clients)}")
 
 async def main():
-    await start_server()
-    while True:
-        await asyncio.sleep(1)
+    server = await websockets.serve(handle_client, "0.0.0.0", 8080)
+    print("Сервер запущен на порту 8080")
+    await server.wait_closed()
 
 try:
     asyncio.run(main())
