@@ -54,10 +54,6 @@ socket2.bind("tcp://*:5556")
 
 
 def read_arduino():
-    """Читает последние актуальные данные с Arduino, очищая буфер"""
-    # ser.reset_input_buffer()  # Очищаем входной буфер перед чтением
-    # time.sleep(0.05)  # Даем время на приход новых данных
-
     if ser.in_waiting > 0:
         try:
             line = ser.readline().decode("utf-8").strip()
@@ -68,6 +64,7 @@ def read_arduino():
                 return [None] * 7  # Защита от неполных данных
 
             print(f"Arduino: {line}")  # Логирование данных
+            ser.reset_input_buffer()  # Очищаем входной буфер перед чтением
             return data
         except Exception as e:
             print(f"Ошибка чтения с Arduino: {e}")
