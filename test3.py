@@ -2,29 +2,45 @@ import cv2
 import zmq
 import pickle
 import time
+import asyncio
+import threading
 
+# Настройки для ZeroMQ
 context = zmq.Context()
 socket = context.socket(zmq.PUB)
 socket.bind("tcp://0.0.0.0:5555")
-socket.setsockopt(zmq.SNDHWM, 1)
+socket.setsockopt(zmq.SNDHWM, 1)  # Буфер для отправки
 
 camera = cv2.VideoCapture(0)
-camera.set(cv2.CAP_PROP_FPS, 30)
-print("Сервер запущен на порту 5555")
+camera.set(cv2.CAP_PROP_FPS, 30)  # Настройка на 30 FPS
 
-while True:
-    ret, frame = camera.read()
-    if not ret:
-        continue
+# Функция захвата изображения
+def capture_frame():
+    while True:
+        ret, frame = camera.read()
+        if ret:
+            _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+            img_bytes = buffer.tobytes()
+            response = {
+                "info": {"temp": 22.5, "status": "active"},
+                "image": img_bytes,
+            }
+            socket.send(pickle.dumps(response))  # Отправляем через ZeroMQ
+        time.sleep(0.03)  # Ожидание 30 FPS
 
-    _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
-    img_bytes = buffer.tobytes()
+# Запуск многопоточности для захвата кадров
+thread = threading.Thread(target=capture_frame)
+thread.daemon = True
+thread.start()
 
-    # Упаковываем данные с использованием pickle
-    response = {
-        "info": {"temp": 22.5, "status": "active"},
-        "image": img_bytes,
-    }
+# Асинхронная часть для работы с ZMQ
+async def main():
+    while True:
+        await asyncio.sleep(0.1)
 
-    socket.send(pickle.dumps(response))  # Отправляем в бинарном формате
-    time.sleep(0.03)
+try:
+    asyncio.run(main())
+except KeyboardInterrupt:
+    print("Сервер остановлен")
+finally:
+    camera.release()
