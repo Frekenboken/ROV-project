@@ -1,50 +1,56 @@
-import zmq
+import socket
+import threading
 import cv2
 import pickle
 import struct
+import zlib
 
+import numpy as np
 
-def main():
-    context = zmq.Context()
+SERVER_IP = '192.168.0.9'
+SERVER_PORT = 12345
 
-    # Сокет для отправки изображения и данных
-    image_socket = context.socket(zmq.PUB)
-    image_socket.bind("tcp://*:5555")
+def compress_image(image):
+    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 50]
+    result, encimg = cv2.imencode('.jpg', image, encode_param)
+    compressed_image = zlib.compress(encimg)
+    return compressed_image
 
-    # Сокет для получения команд
-    command_socket = context.socket(zmq.REP)
-    command_socket.bind("tcp://*:5556")
+def decompress_image(compressed_image):
+    encimg = zlib.decompress(compressed_image)
+    image = cv2.imdecode(np.frombuffer(encimg, dtype=np.uint8), cv2.IMREAD_COLOR)
+    return image
 
-    cap = cv2.VideoCapture(0)  # Открываем камеру
-
+def handle_client(client_socket):
+    cap = cv2.VideoCapture(0)
     while True:
         ret, frame = cap.read()
         if not ret:
-            continue
+            break
 
-        # Кодируем изображение в jpeg
-        _, buffer = cv2.imencode(".jpg", frame)
+        compressed_frame = compress_image(frame)
+        data = pickle.dumps({'image': compressed_frame, 'data': {'example_key': 'example_value'}})
+        a = len(data)
+        client_socket.sendall(struct.pack(">L", a) + data)
 
-        # Создаём словарь с данными
-        data = {"message": "Hello from server", "frame_size": buffer.shape[0]}
+        # Receive control signal from client
+        control_signal = client_socket.recv(1024).decode('utf-8')
+        print(f"Received control signal: {control_signal}")
 
-        # Сериализуем данные
-        packet = pickle.dumps((buffer.tobytes(), data))
+    cap.release()
+    client_socket.close()
 
-        # Отправляем данные клиенту
-        image_socket.send(packet)
+def start_server():
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind((SERVER_IP, SERVER_PORT))
+    server_socket.listen(5)
+    print(f"Server listening on {SERVER_IP}:{SERVER_PORT}")
 
-        # Получаем команду от клиента
-        try:
-            command = command_socket.recv(zmq.NOBLOCK)  # Читаем без блокировки
-            commands = pickle.loads(command)
-            print("Полученные команды:", commands)
-
-            # Отправляем подтверждение
-            command_socket.send(b"OK")
-        except zmq.Again:
-            pass  # Нет новых команд
-
+    while True:
+        client_socket, addr = server_socket.accept()
+        print(f"Accepted connection from {addr}")
+        client_thread = threading.Thread(target=handle_client, args=(client_socket,))
+        client_thread.start()
 
 if __name__ == "__main__":
-    main()
+    start_server()
