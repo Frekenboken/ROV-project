@@ -31,7 +31,7 @@ pitch_pid.set_limit(-5, 5)
 pitch_pid.set_offset(0)
 
 # Сервоприводы
-servos = [Servo(17), Servo(18),
+servos = [Servo(11), Servo(18),
           Servo(18), Servo(18)]
 motors = [Servo(19), Servo(19),
           Servo(19), Servo(19)]
