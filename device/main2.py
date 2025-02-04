@@ -103,10 +103,10 @@ def cam_and_data_send():
         image_str = base64.b64encode(encoded_frame.tobytes()).decode('utf-8')
 
         # Читаем данные с Arduino
-        arduino_data = read_arduino()
+        # arduino_data = read_arduino()
 
         # Отправка данных
-        data = {'image': image_str, 'data': arduino_data}
+        data = {'image': image_str, 'data': [1, 2, 3]}
         response = socket.recv_string()
         if response == 'c':
             print('Close connection.')
@@ -123,8 +123,8 @@ def control_send():
 
 
 # Запуск PID в отдельном потоке
-pid_thread = Thread(target=pid_control_loop)
-pid_thread.start()
+# pid_thread = Thread(target=pid_control_loop)
+# pid_thread.start()
 
 cdt = Thread(target=cam_and_data_send)
 # ct = Thread(target=control_send)
