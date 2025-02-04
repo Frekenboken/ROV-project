@@ -119,7 +119,7 @@ def control_send():
         data = {'status': 'ok'}
         socket2.send_pyobj(data)
 
-        servos[0].write(map_value(float(response['x']), 0, 1, 0, 180))
+        servos[0].write(map_value(float(response['x']), -1, 1, 0, 180))
 
         # depth = 100  # Заглушка (здесь нужно получать реальные данные)
         # gx = 0
