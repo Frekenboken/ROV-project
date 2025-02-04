@@ -83,8 +83,18 @@ def cam_and_data_send():
         _, encoded_frame = cv2.imencode('.jpg', frame)
         image_str = base64.b64encode(encoded_frame.tobytes()).decode('utf-8')
 
+        arduino_data = read_arduino()
+
         # Отправка данных
-        data = {'image': image_str, 'data_dict': read_arduino()}
+        data = {'image': image_str, 'data': {'depth': arduino_data[0],
+                                             'dy': arduino_data[1],
+                                             'dx': arduino_data[2],
+                                             'temperature_in': arduino_data[3],
+                                             'humidity_in': arduino_data[4],
+                                             'pressure_in': arduino_data[5],
+                                             'temperature_out': arduino_data[6],
+                                             'cpu_temperature': str(psutil.sensors_temperatures()["cpu_thermal"][0][1]),
+                                             'cpu_usage': str(psutil.cpu_percent())}}
         response = socket.recv_string()
         if response == 'c':
             print('Close connection.')
