@@ -1,46 +1,35 @@
-import cv2
-import zmq
-import pickle
-import time
-import asyncio
 import threading
+import cv2
+import sys
+import pynmea2
+import time
+import psutil
+import zmq
+import cv2
+import base64
 
-# Настройки для ZeroMQ
+cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
 context = zmq.Context()
-socket = context.socket(zmq.PUB)
-socket.bind("tcp://0.0.0.0:5555")
-socket.setsockopt(zmq.SNDHWM, 1)  # Буфер для отправки
+socket = context.socket(zmq.PAIR)
+socket.bind("tcp://*:5555")
 
-camera = cv2.VideoCapture(0)
-camera.set(cv2.CAP_PROP_FPS, 30)  # Настройка на 30 FPS
+while True:
+    suc, frame = cap.read()
+    if not suc:
+        print(1)
+        break
 
-# Функция захвата изображения
-def capture_frame():
-    while True:
-        ret, frame = camera.read()
-        if ret:
-            _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
-            img_bytes = buffer.tobytes()
-            response = {
-                "info": {"temp": 22.5, "status": "active"},
-                "image": img_bytes,
-            }
-            socket.send(pickle.dumps(response))  # Отправляем через ZeroMQ
-        time.sleep(0.03)  # Ожидание 30 FPS
+    # Кодирование изображения в base64
+    _, encoded_frame = cv2.imencode('.jpg', frame)
+    image_str = base64.b64encode(encoded_frame.tobytes()).decode('utf-8')
 
-# Запуск многопоточности для захвата кадров
-thread = threading.Thread(target=capture_frame)
-thread.daemon = True
-thread.start()
-
-# Асинхронная часть для работы с ZMQ
-async def main():
-    while True:
-        await asyncio.sleep(0.1)
-
-try:
-    asyncio.run(main())
-except KeyboardInterrupt:
-    print("Сервер остановлен")
-finally:
-    camera.release()
+    # Отправка данных
+    data = {'image': image_str, 'data_dict': [1, 2, 3]}
+    response = socket.recv_string()
+    if response == 'c':
+        print('Close connection.')
+    socket.send_pyobj(data)
+    # time.sleep(0.05)  # Задержка для управления частотой передачи кадров
