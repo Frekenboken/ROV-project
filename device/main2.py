@@ -12,9 +12,6 @@ import RPi.GPIO as gpio
 from gpiozero import CPUTemperature
 from PID import PIDController
 
-# Параметры камеры
-CAMERA_INDEX = 0
-
 # Настройки
 SERIAL_PORT = "/dev/ttyUSB0"
 SERIAL_BAUDRATE = 115200
@@ -40,7 +37,7 @@ motors = [Servo(19), Servo(19),
           Servo(19), Servo(19)]
 
 # Инициализация камеры
-cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_V4L2)
+cap = cv2.VideoCapture(0)
 
 # Подключение к Arduino
 ser = serial.Serial(SERIAL_PORT, SERIAL_BAUDRATE, timeout=SERIAL_TIMEOUT)
