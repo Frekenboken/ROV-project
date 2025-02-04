@@ -61,6 +61,7 @@ def read_arduino():
     if ser.in_waiting > 0:
         try:
             line = ser.readline().decode("utf-8").strip()
+            print(line)
             data = line.split(",")
 
             if len(data) < 7:
@@ -95,7 +96,7 @@ def cam_and_data_send():
     while True:
         suc, frame = cap.read()
         if not suc:
-            print(1)
+            print("Ошибка чтения камеры!")
             break
 
         # Кодирование изображения в base64
@@ -109,11 +110,11 @@ def cam_and_data_send():
             print('Close connection.')
         socket.send_pyobj(data)
 
+
 def control_send():
     while True:
-        # Отправка данных
         response = socket2.recv_pyobj()
-        print(response)
+        # print(response)
         data = {'status': 'ok'}
         socket2.send_pyobj(data)
 
