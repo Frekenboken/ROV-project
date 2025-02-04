@@ -1,6 +1,5 @@
 import zmq
 import cv2
-import numpy as np
 import pickle
 import time
 
@@ -36,8 +35,11 @@ def server():
         sender.send_multipart([b'image', serialized_frame, serialized_data])
 
         # Получение команд
-        command = receiver.recv_string()
-        print(f"Received command: {command}")
+        try:
+            command = receiver.recv_string(flags=zmq.NOBLOCK)
+            print(f"Received command: {command}")
+        except zmq.Again:
+            pass
 
         # Задержка для симуляции реального времени
         time.sleep(0.1)
