@@ -1,50 +1,55 @@
-import zmq
+import socket
 import cv2
 import pickle
-import time
+import struct
+import threading
 
-def server():
-    context = zmq.Context()
-
-    # Сокет для отправки изображений и данных
-    sender = context.socket(zmq.PUB)
-    sender.bind("tcp://*:5555")
-
-    # Сокет для получения команд
-    receiver = context.socket(zmq.SUB)
-    receiver.bind("tcp://*:5556")
-    receiver.setsockopt_string(zmq.SUBSCRIBE, '')
-
-    # Инициализация камеры
+def send_frame(client_socket):
     cap = cv2.VideoCapture(0)
-
     while True:
-        # Чтение изображения с камеры
         ret, frame = cap.read()
         if not ret:
             break
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+        result, frame = cv2.imencode('.jpg', frame, encode_param)
+        data = pickle.dumps(frame, 0)
+        size = len(data)
 
-        # Сериализация изображения
-        serialized_frame = pickle.dumps(frame)
-
-        # Пример данных
-        data = {"temperature": 25.5, "humidity": 60}
-        serialized_data = pickle.dumps(data)
-
-        # Отправка изображения и данных
-        sender.send_multipart([b'image', serialized_frame, serialized_data])
-
-        # Получение команд
         try:
-            command = receiver.recv_string(flags=zmq.NOBLOCK)
-            print(f"Received command: {command}")
-        except zmq.Again:
-            pass
+            client_socket.sendall(struct.pack(">L", size) + data)
+        except:
+            break
 
-        # Задержка для симуляции реального времени
-        time.sleep(0.1)
+def receive_data(client_socket):
+    while True:
+        try:
+            data = client_socket.recv(1024)
+            if not data:
+                break
+            print(f"Received data: {data.decode('utf-8')}")
+        except:
+            break
 
-    cap.release()
+def handle_client(client_socket):
+    send_thread = threading.Thread(target=send_frame, args=(client_socket,))
+    receive_thread = threading.Thread(target=receive_data, args=(client_socket,))
+    send_thread.start()
+    receive_thread.start()
+    send_thread.join()
+    receive_thread.join()
+    client_socket.close()
+
+def main():
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind(('0.0.0.0', 8485))
+    server_socket.listen(5)
+    print("Server listening on port 8485")
+
+    while True:
+        client_socket, addr = server_socket.accept()
+        print(f"Connection from {addr}")
+        client_handler = threading.Thread(target=handle_client, args=(client_socket,))
+        client_handler.start()
 
 if __name__ == "__main__":
-    server()
+    main()
