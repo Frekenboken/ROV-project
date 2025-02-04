@@ -1,19 +1,20 @@
 import zmq
 import cv2
 import numpy as np
-import ujson as json  # Быстрая версия JSON
+import ujson as json
 import time
-
 
 def main():
     context = zmq.Context()
 
     # PUSH-сокет для отправки данных
     video_socket = context.socket(zmq.PUSH)
+    video_socket.setsockopt(zmq.LINGER, 0)  # Быстрое закрытие при выходе
     video_socket.bind("tcp://*:5555")
 
     # REP-сокет для приема команд
     command_socket = context.socket(zmq.REP)
+    command_socket.setsockopt(zmq.LINGER, 0)
     command_socket.bind("tcp://*:5556")
 
     cap = cv2.VideoCapture(0)
@@ -37,22 +38,24 @@ def main():
         data = {
             "timestamp": time.time(),
             "message": "Данные с сервера",
-            "shape": frame.shape  # Нужно для восстановления изображения
+            "shape": frame.shape  # (H, W, C)
         }
         json_data = json.dumps(data).encode('utf-8')
 
-        # Отправляем кадр и JSON
-        video_socket.send_multipart([frame_bytes, json_data], zmq.NOBLOCK)
+        # Отправляем кадр и JSON (не блокируем)
+        try:
+            video_socket.send_multipart([frame_bytes, json_data], zmq.NOBLOCK)
+        except zmq.error.Again:
+            print("⚠ Пропущен кадр (ресурс недоступен)")
 
         # Проверяем входящие команды
         try:
-            if command_socket.poll(10):  # Ждем входящий запрос (10 мс)
+            if command_socket.poll(10):  # Ждем 10 мс
                 command = command_socket.recv_json()
                 print(f"Получена команда: {command}")
                 command_socket.send_json({"status": "ok"})
         except zmq.ZMQError:
-            pass  # Игнорируем ошибки
-
+            pass
 
 if __name__ == "__main__":
     main()
