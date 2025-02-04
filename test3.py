@@ -5,21 +5,14 @@ import pickle
 import struct
 import zlib
 
-import numpy as np
-
 SERVER_IP = '192.168.0.9'
 SERVER_PORT = 12345
 
 def compress_image(image):
-    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 50]
+    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 30]  # Уменьшаем качество для ускорения
     result, encimg = cv2.imencode('.jpg', image, encode_param)
     compressed_image = zlib.compress(encimg)
     return compressed_image
-
-def decompress_image(compressed_image):
-    encimg = zlib.decompress(compressed_image)
-    image = cv2.imdecode(np.frombuffer(encimg, dtype=np.uint8), cv2.IMREAD_COLOR)
-    return image
 
 def handle_client(client_socket):
     cap = cv2.VideoCapture(0)
