@@ -57,14 +57,13 @@ def read_arduino():
     if ser.in_waiting > 0:
         try:
             line = ser.readline().decode("utf-8").strip()
-            print(line)
             data = line.split(",")
 
             if len(data) < 7:
                 return [None] * 7  # Защита от неполных данных
 
-            print(f"Arduino: {line}")  # Логирование данных
-            ser.reset_input_buffer()  # Очищаем входной буфер перед чтением
+            # print(f"Arduino: {line}")  # Логирование данных
+            ser.reset_input_buffer()  # Очищаем входной буфер
             return data
         except Exception as e:
             print(f"Ошибка чтения с Arduino: {e}")
@@ -103,6 +102,11 @@ def cam_and_data_send():
 
 def control_send():
     while True:
+        response = socket2.recv_pyobj()
+        print(response)
+        data = {'status': 'ok'}
+        socket2.send_pyobj(data)
+
         # depth = 100  # Заглушка (здесь нужно получать реальные данные)
         # gx = 0
         # gy = 0
@@ -115,11 +119,6 @@ def control_send():
         # servos[1].write(depth_speed + roll_speed + pitch_speed)
         # servos[2].write(depth_speed - roll_speed - pitch_speed)
         # servos[3].write(depth_speed + roll_speed - pitch_speed)
-
-        response = socket2.recv_pyobj()
-        # print(response)
-        data = {'status': 'ok'}
-        socket2.send_pyobj(data)
 
 
 cdt = Thread(target=cam_and_data_send)
