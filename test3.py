@@ -16,20 +16,41 @@ context = zmq.Context()
 socket = context.socket(zmq.PAIR)
 socket.bind("tcp://*:5555")
 
-while True:
-    suc, frame = cap.read()
-    if not suc:
-        print(1)
-        break
+context2 = zmq.Context()
+socket2 = context.socket(zmq.PAIR)
+socket2.bind("tcp://*:5556")
 
-    # Кодирование изображения в base64
-    _, encoded_frame = cv2.imencode('.jpg', frame)
-    image_str = base64.b64encode(encoded_frame.tobytes()).decode('utf-8')
 
-    # Отправка данных
-    data = {'image': image_str, 'data_dict': [1, 2, 3]}
-    response = socket.recv_string()
-    if response == 'c':
-        print('Close connection.')
-    socket.send_pyobj(data)
-    # time.sleep(0.05)  # Задержка для управления частотой передачи кадров
+def th1():
+    while True:
+        suc, frame = cap.read()
+        if not suc:
+            print(1)
+            break
+
+        # Кодирование изображения в base64
+        _, encoded_frame = cv2.imencode('.jpg', frame)
+        image_str = base64.b64encode(encoded_frame.tobytes()).decode('utf-8')
+
+        # Отправка данных
+        data = {'image': image_str, 'data_dict': [1, 2, 3]}
+        response = socket.recv_string()
+        if response == 'c':
+            print('Close connection.')
+        socket.send_pyobj(data)
+        # time.sleep(0.05)  # Задержка для управления частотой передачи кадров
+
+
+def th2():
+    while True:
+        # Отправка данных
+        response = socket.recv_string()
+        print(response)
+        data = {'status': 'ok'}
+        socket.send_pyobj(data)
+
+
+t1 = threading.Thread(target=th1)
+t2 = threading.Thread(target=th2)
+t1.start()
+t2.start()
