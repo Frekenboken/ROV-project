@@ -40,6 +40,9 @@ def th1():
         socket.send_pyobj(data)
         # time.sleep(0.05)  # Задержка для управления частотой передачи кадров
 
+
+def th2():
+    while True:
         # Отправка данных
         response = socket2.recv_pyobj()
         print(response)
@@ -47,4 +50,7 @@ def th1():
         socket2.send_pyobj(data)
 
 
-th1()
+t1 = threading.Thread(target=th1)
+t2 = threading.Thread(target=th2)
+t1.start()
+t2.start()
