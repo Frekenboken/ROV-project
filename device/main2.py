@@ -72,24 +72,6 @@ def read_arduino():
     return [None] * 7  # Если данных нет, возвращаем пустой список
 
 
-def pid_control_loop():
-    """Фоновый поток для расчетов PID."""
-    while True:
-        print('c')
-        # depth = 100  # Заглушка (здесь нужно получать реальные данные)
-        # gx = 0
-        # gy = 0
-        #
-        # depth_speed = depth_pid.compute(depth, 120)  # 120 - пример целевого значения
-        # roll_speed = roll_pid.compute(gx, 0)
-        # pitch_speed = pitch_pid.compute(gy, 0)
-        #
-        # servos[0].write(depth_speed - roll_speed + pitch_speed)
-        # servos[1].write(depth_speed + roll_speed + pitch_speed)
-        # servos[2].write(depth_speed - roll_speed - pitch_speed)
-        # servos[3].write(depth_speed + roll_speed - pitch_speed)
-
-
 def cam_and_data_send():
     while True:
         suc, frame = cap.read()
@@ -111,15 +93,24 @@ def cam_and_data_send():
 
 def control_send():
     while True:
+        # depth = 100  # Заглушка (здесь нужно получать реальные данные)
+        # gx = 0
+        # gy = 0
+        #
+        # depth_speed = depth_pid.compute(depth, 120)  # 120 - пример целевого значения
+        # roll_speed = roll_pid.compute(gx, 0)
+        # pitch_speed = pitch_pid.compute(gy, 0)
+        #
+        # servos[0].write(depth_speed - roll_speed + pitch_speed)
+        # servos[1].write(depth_speed + roll_speed + pitch_speed)
+        # servos[2].write(depth_speed - roll_speed - pitch_speed)
+        # servos[3].write(depth_speed + roll_speed - pitch_speed)
+
         response = socket2.recv_pyobj()
         # print(response)
         data = {'status': 'ok'}
         socket2.send_pyobj(data)
 
-
-# Запуск PID в отдельном потоке
-pid_thread = Thread(target=pid_control_loop)
-pid_thread.start()
 
 cdt = Thread(target=cam_and_data_send)
 # ct = Thread(target=control_send)
