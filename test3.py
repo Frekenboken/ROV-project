@@ -1,8 +1,8 @@
 import socket
 import cv2
-import pickle
 import struct
 import threading
+import numpy as np
 
 class Server:
     def __init__(self, host='192.168.0.9', port=5000):
@@ -16,21 +16,22 @@ class Server:
 
     def handle_client(self, client_socket):
         try:
-            cap = cv2.VideoCapture(0)
+            cap = cv2.VideoCapture(0)  # Используйте 0 для веб-камеры или путь к видеофайлу
             while True:
                 ret, frame = cap.read()
                 if not ret:
                     break
 
-                # Serialize frame
-                data = pickle.dumps(frame)
-                message_size = struct.pack("L", len(data))
+                # Кодируем кадр в JPEG
+                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                data = buffer.tobytes()
 
-                # Send frame to client
+                # Отправляем размер данных и сами данные
+                message_size = struct.pack("L", len(data))
                 with self.lock:
                     client_socket.sendall(message_size + data)
 
-                # Receive control signals from client
+                # Принимаем управляющие сигналы от клиента
                 control_data = client_socket.recv(1024)
                 if control_data:
                     print(f"Received control data: {control_data.decode()}")
