@@ -1,12 +1,12 @@
 import cv2
 import zmq
-import json
+import pickle
 import time
 
 context = zmq.Context()
-socket = context.socket(zmq.PUB)  # Паблишер (широковещательная передача)
+socket = context.socket(zmq.PUB)
 socket.bind("tcp://0.0.0.0:5555")
-socket.setsockopt(zmq.SNDHWM, 1)  # Ограничиваем буфер до 1 сообщения
+socket.setsockopt(zmq.SNDHWM, 1)
 
 camera = cv2.VideoCapture(0)
 camera.set(cv2.CAP_PROP_FPS, 30)
@@ -20,11 +20,11 @@ while True:
     _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
     img_bytes = buffer.tobytes()
 
-    # Данные для отправки
+    # Упаковываем данные с использованием pickle
     response = {
         "info": {"temp": 22.5, "status": "active"},
-        "image": img_bytes,  # Передаём в чистом `bytes`, без HEX!
+        "image": img_bytes,
     }
 
-    socket.send_json(response)  # Отправляем последним клиентам
-    time.sleep(0.03)  # Ограничиваем до 30 FPS
+    socket.send(pickle.dumps(response))  # Отправляем в бинарном формате
+    time.sleep(0.03)
