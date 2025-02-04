@@ -45,7 +45,7 @@ time.sleep(2)  # Ожидание стабилизации соединения
 
 # Настройка ZeroMQ
 context = zmq.Context()
-socket = context.socket(zmq.REP)
+socket = context.socket(zmq.PAIR)
 socket.bind(f"tcp://*:5555")
 
 context2 = zmq.Context()
@@ -93,25 +93,21 @@ def pid_control_loop():
 
 def cam_and_data_send():
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("Ошибка чтения кадра с камеры!")
-            continue
+        suc, frame = cap.read()
+        if not suc:
+            print(1)
+            break
 
         # Кодирование изображения в base64
         _, encoded_frame = cv2.imencode('.jpg', frame)
         image_str = base64.b64encode(encoded_frame.tobytes()).decode('utf-8')
 
-        # Читаем данные с Arduino
-        # arduino_data = read_arduino()
-
         # Отправка данных
-        data = {'image': image_str, 'data': [1, 2, 3]}
+        data = {'image': image_str, 'data_dict': read_arduino()}
         response = socket.recv_string()
         if response == 'c':
             print('Close connection.')
         socket.send_pyobj(data)
-
 
 def control_send():
     while True:
