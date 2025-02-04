@@ -1,49 +1,53 @@
-import socket
-import threading
+import asyncio
+import json
 import cv2
-import pickle
-import struct
-import zlib
+import numpy as np
+import aiohttp
+from aiohttp import web
 
-SERVER_IP = '192.168.0.9'
-SERVER_PORT = 12345
+# Глобальные переменные
+camera = cv2.VideoCapture(0)  # Камера
+clients = set()  # Подключенные клиенты
 
-def compress_image(image):
-    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 30]  # Уменьшаем качество для ускорения
-    result, encimg = cv2.imencode('.jpg', image, encode_param)
-    compressed_image = zlib.compress(encimg)
-    return compressed_image
+async def handle_request(request):
+    """ Обработчик запросов от клиента """
+    try:
+        data = await request.json()
+        command = data.get("command", "noop")  # Получаем команду
+        response_data = {"status": "ok", "received_command": command}
 
-def handle_client(client_socket):
-    cap = cv2.VideoCapture(0)
-    while True:
-        ret, frame = cap.read()
+        # Захватываем кадр с камеры
+        ret, frame = camera.read()
         if not ret:
-            break
+            response_data["error"] = "Failed to capture frame"
+        else:
+            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            response_data["image"] = buffer.tobytes().hex()  # Отправляем кадр в hex-формате
 
-        compressed_frame = compress_image(frame)
-        data = pickle.dumps({'image': compressed_frame, 'data': {'example_key': 'example_value'}})
-        a = len(data)
-        client_socket.sendall(struct.pack(">L", a) + data)
+        response_data["info"] = {"temp": 22.5, "status": "active"}  # Пример данных
 
-        # Receive control signal from client
-        control_signal = client_socket.recv(1024).decode('utf-8')
-        print(f"Received control signal: {control_signal}")
+        return web.json_response(response_data)
+    except Exception as e:
+        return web.json_response({"error": str(e)})
 
-    cap.release()
-    client_socket.close()
+async def start_server():
+    """ Запуск сервера """
+    app = web.Application()
+    app.router.add_post("/control", handle_request)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 8080)
+    await site.start()
+    print("Сервер запущен на порту 8080")
 
-def start_server():
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((SERVER_IP, SERVER_PORT))
-    server_socket.listen(5)
-    print(f"Server listening on {SERVER_IP}:{SERVER_PORT}")
-
+async def main():
+    await start_server()
     while True:
-        client_socket, addr = server_socket.accept()
-        print(f"Accepted connection from {addr}")
-        client_thread = threading.Thread(target=handle_client, args=(client_socket,))
-        client_thread.start()
+        await asyncio.sleep(1)
 
-if __name__ == "__main__":
-    start_server()
+try:
+    asyncio.run(main())
+except KeyboardInterrupt:
+    print("Сервер остановлен")
+finally:
+    camera.release()
