@@ -31,7 +31,7 @@ pitch_pid.set_limit(-5, 5)
 pitch_pid.set_offset(0)
 
 # Сервоприводы
-servos = [Servo(18), Servo(18),
+servos = [Servo(17), Servo(18),
           Servo(18), Servo(18)]
 motors = [Servo(19), Servo(19),
           Servo(19), Servo(19)]
@@ -51,6 +51,18 @@ socket.bind(f"tcp://*:5555")
 context2 = zmq.Context()
 socket2 = context2.socket(zmq.PAIR)
 socket2.bind("tcp://*:5556")
+
+
+def map_value(value, from_min, from_max, to_min, to_max):
+    # Проверяем, чтобы значения в исходном диапазоне не совпадали
+    if from_min == from_max:
+        raise ValueError("from_min и from_max не могут быть равными.")
+
+    # Вычисляем, в какой пропорции находится value в исходном диапазоне
+    from_range = from_max - from_min
+    to_range = to_max - to_min
+    scaled_value = (value - from_min) / from_range  # Нормализуем значение
+    return to_min + (scaled_value * to_range)  # Преобразуем в новый диапазон
 
 
 def read_arduino():
@@ -106,6 +118,8 @@ def control_send():
         print(response)
         data = {'status': 'ok'}
         socket2.send_pyobj(data)
+
+        servos[0].write(map_value(float(response['x']), 0, 1, 0, 180))
 
         # depth = 100  # Заглушка (здесь нужно получать реальные данные)
         # gx = 0
