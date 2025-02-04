@@ -1,56 +1,30 @@
-import threading
-import cv2
-import sys
-import pynmea2
+import RPi.GPIO as IO
 import time
-import psutil
-import zmq
-import cv2
-import base64
 
-cap = cv2.VideoCapture(0)
-# cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-# cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+IO.setwarnings(False)
+IO.setmode(IO.BCM)
+IO.setup(19, IO.OUT)  # Подключение к пину 19 для управления серво
 
-context = zmq.Context()
-socket = context.socket(zmq.PAIR)
-socket.bind("tcp://*:5555")
+# Настройка ШИМ на пине 19 с частотой 50 Гц
+pwm = IO.PWM(19, 50)
+pwm.start(0)
 
-context2 = zmq.Context()
-socket2 = context.socket(zmq.PAIR)
-socket2.bind("tcp://*:5556")
+# Функция для установки угла
+def set_angle(angle):
+    duty = (angle / 18) + 2  # Расчёт коэффициента заполнения для углов от 0 до 180 градусов
+    pwm.ChangeDutyCycle(duty)  # Изменяем коэффициент заполнения
+    time.sleep(0.5)  # Ожидаем завершения движения серво
 
-
-def th1():
+try:
     while True:
-        suc, frame = cap.read()
-        if not suc:
-            print(1)
-            break
+        for angle in range(0, 180, 10):  # Двигаем серво от 0 до 180 градусов
+            set_angle(angle)
+            time.sleep(0.5)
 
-        # Кодирование изображения в base64
-        _, encoded_frame = cv2.imencode('.jpg', frame)
-        image_str = base64.b64encode(encoded_frame.tobytes()).decode('utf-8')
+        for angle in range(180, 0, -10):  # Двигаем серво от 180 до 0 градусов
+            set_angle(angle)
+            time.sleep(0.5)
 
-        # Отправка данных
-        data = {'image': image_str, 'data_dict': [1, 2, 3]}
-        response = socket.recv_string()
-        if response == 'c':
-            print('Close connection.')
-        socket.send_pyobj(data)
-        # time.sleep(0.05)  # Задержка для управления частотой передачи кадров
-
-
-def th2():
-    while True:
-        # Отправка данных
-        response = socket2.recv_pyobj()
-        print(response)
-        data = {'status': 'ok'}
-        socket2.send_pyobj(data)
-
-
-t1 = threading.Thread(target=th1)
-t2 = threading.Thread(target=th2)
-t1.start()
-t2.start()
+except KeyboardInterrupt:
+    pwm.stop()  # Останавливаем ШИМ при прерывании программы
+    IO.cleanup()  # Очистка GPIO
