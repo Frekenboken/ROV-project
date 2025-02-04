@@ -5,7 +5,7 @@ import zmq
 
 def server(host='192.168.0.9', port=5000):
     context = zmq.Context()
-    socket = context.socket(zmq.REP)  # Реплицирующий сокет (ответ)
+    socket = context.socket(zmq.REP)  # REP-сокет должен сначала получать запрос
     socket.bind(f"tcp://{host}:{port}")
     print(f"Сервер запущен на {host}:{port}, ожидаем подключение...")
 
@@ -14,6 +14,9 @@ def server(host='192.168.0.9', port=5000):
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     while True:
+        # Сначала ждем запрос от клиента (иначе будет ошибка)
+        request = socket.recv()
+
         ret, frame = cap.read()
         if not ret:
             break
@@ -25,11 +28,6 @@ def server(host='192.168.0.9', port=5000):
 
         # Отправка данных клиенту
         socket.send(data)
-
-        # Получаем управляющие сигналы от клиента
-        control_data = socket.recv()
-        control_signals = pickle.loads(control_data)
-        print(f"Получены управляющие сигналы: {control_signals}")
 
     cap.release()
     socket.close()
