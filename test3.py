@@ -44,7 +44,7 @@ def th1():
 def th2():
     while True:
         # Отправка данных
-        response = socket2.recv_string()
+        response = socket2.recv_pyobj()
         print(response)
         data = {'status': 'ok'}
         socket2.send_pyobj(data)
