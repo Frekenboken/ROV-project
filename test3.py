@@ -1,61 +1,48 @@
 import zmq
 import cv2
 import numpy as np
-import ujson as json
+import pickle
 import time
 
-def main():
+def server():
     context = zmq.Context()
 
-    # PUSH-сокет для отправки данных
-    video_socket = context.socket(zmq.PUSH)
-    video_socket.setsockopt(zmq.LINGER, 0)  # Быстрое закрытие при выходе
-    video_socket.bind("tcp://*:5555")
+    # Сокет для отправки изображений и данных
+    sender = context.socket(zmq.PUB)
+    sender.bind("tcp://*:5555")
 
-    # REP-сокет для приема команд
-    command_socket = context.socket(zmq.REP)
-    command_socket.setsockopt(zmq.LINGER, 0)
-    command_socket.bind("tcp://*:5556")
+    # Сокет для получения команд
+    receiver = context.socket(zmq.SUB)
+    receiver.bind("tcp://*:5556")
+    receiver.setsockopt_string(zmq.SUBSCRIBE, '')
 
+    # Инициализация камеры
     cap = cv2.VideoCapture(0)
 
-    if not cap.isOpened():
-        print("Ошибка: не удалось открыть камеру")
-        return
-
-    print("Сервер запущен...")
-
     while True:
+        # Чтение изображения с камеры
         ret, frame = cap.read()
         if not ret:
-            print("Ошибка: не удалось получить кадр")
             break
 
-        # Конвертируем кадр в bytes (BGR -> raw)
-        frame_bytes = frame.tobytes()
+        # Сериализация изображения
+        serialized_frame = pickle.dumps(frame)
 
-        # Создаем JSON-объект
-        data = {
-            "timestamp": time.time(),
-            "message": "Данные с сервера",
-            "shape": frame.shape  # (H, W, C)
-        }
-        json_data = json.dumps(data).encode('utf-8')
+        # Пример данных
+        data = {"temperature": 25.5, "humidity": 60}
+        serialized_data = pickle.dumps(data)
 
-        # Отправляем кадр и JSON (не блокируем)
-        try:
-            video_socket.send_multipart([frame_bytes, json_data], zmq.NOBLOCK)
-        except zmq.error.Again:
-            print("⚠ Пропущен кадр (ресурс недоступен)")
+        # Отправка изображения и данных
+        sender.send_multipart([b'image', serialized_frame, serialized_data])
 
-        # Проверяем входящие команды
-        try:
-            if command_socket.poll(10):  # Ждем 10 мс
-                command = command_socket.recv_json()
-                print(f"Получена команда: {command}")
-                command_socket.send_json({"status": "ok"})
-        except zmq.ZMQError:
-            pass
+        # Получение команд
+        command = receiver.recv_string()
+        print(f"Received command: {command}")
+
+        # Задержка для симуляции реального времени
+        time.sleep(0.1)
+
+    cap.release()
 
 if __name__ == "__main__":
-    main()
+    server()
