@@ -44,10 +44,10 @@ def th1():
 def th2():
     while True:
         # Отправка данных
-        response = socket.recv_string()
+        response = socket2.recv_string()
         print(response)
         data = {'status': 'ok'}
-        socket.send_pyobj(data)
+        socket2.send_pyobj(data)
 
 
 t1 = threading.Thread(target=th1)
