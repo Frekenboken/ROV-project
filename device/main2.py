@@ -184,10 +184,10 @@ def control_send():
             x_value = float(response['x'])
             y_value = float(response['y'])
 
-            set_angle(servo_pwm_instances[0], map_value(get_value(-x_value, -y_value), 0, 1, 0, 180))
-            set_angle(servo_pwm_instances[1], map_value(get_value(x_value, -y_value), 0, 1, 0, 180))
-            set_angle(servo_pwm_instances[2], map_value(get_value(-x_value, y_value), 0, 1, 0, 180))
-            set_angle(servo_pwm_instances[3], map_value(get_value(x_value, y_value), 0, 1, 0, 180))
+            set_angle(servo_pwm_instances[0], map_value(get_value(-x_value, -y_value), 0, 1, 30, 150))
+            set_angle(servo_pwm_instances[1], map_value(get_value(x_value, -y_value), 0, 1, 30, 150))
+            set_angle(servo_pwm_instances[2], map_value(get_value(-x_value, y_value), 0, 1, 30, 150))
+            set_angle(servo_pwm_instances[3], map_value(get_value(x_value, y_value), 0, 1, 30, 150))
 
 
         except KeyboardInterrupt:
