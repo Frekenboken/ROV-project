@@ -12,6 +12,14 @@ import RPi.GPIO as gpio
 from gpiozero import CPUTemperature
 from PID import PIDController
 
+context = zmq.Context()
+socket = context.socket(zmq.PAIR)
+socket.bind(f"tcp://*:5555")
+
+context2 = zmq.Context()
+socket2 = context2.socket(zmq.PAIR)
+socket2.bind("tcp://*:5556")
+
 # Настройки
 SERIAL_PORT = "/dev/ttyUSB0"
 SERIAL_BAUDRATE = 115200
@@ -31,17 +39,58 @@ pitch_pid.set_limit(-5, 5)
 pitch_pid.set_offset(0)
 
 # Сервоприводы
-servos = [Servo(12), Servo(18),
-          Servo(18), Servo(18)]
-motors = [Servo(19), Servo(19),
-          Servo(19), Servo(19)]
+servo_pins = [19, 20, 21, 22]
+motor_pins = [18, 13, 12, 25]
+
+gpio.setwarnings(False)
+gpio.setmode(gpio.BCM)
+
+# Настройка GPIO пинов для ШИМ
+for pin in servo_pins:
+    gpio.setup(pin, gpio.OUT)
+for pin in motor_pins:
+    gpio.setup(pin, gpio.OUT)
+
+# Создаем объекты PWM для каждого пина с частотой 50 Гц
+servo_pwm_instances = [gpio.PWM(pin, 50) for pin in servo_pins]
+motor_pwm_instances = [gpio.PWM(pin, 50) for pin in motor_pins]
+
+# Запуск ШИМ сигналов с начальной шириной импульса 0%
+for pwm in servo_pwm_instances:
+    pwm.start(0)
+for pwm in motor_pwm_instances:
+    pwm.start(0)
 
 # Инициализация камеры
 cap = cv2.VideoCapture(0)
 
 # Подключение к Arduino
 ser = serial.Serial(SERIAL_PORT, SERIAL_BAUDRATE, timeout=SERIAL_TIMEOUT)
-time.sleep(2)  # Ожидание стабилизации соединения
+time.sleep(2)  # Ожидание стабилизации соединения7
+
+
+def get_value(x, y):
+    if x > 0 and y > 0:
+        if abs(x) > abs(y):
+            return x - y  # "Первый октант"
+        else:
+            return y - x  # "Второй октант"
+    elif x < 0 and y > 0:
+        if not (abs(x) < abs(y)):
+            return 2 ** 0.5 * y  # "Четвертый октант"
+    elif x < 0 and y < 0:
+        if abs(x) > abs(y):
+            return 0  # "Пятый октант"
+        else:
+            return 0  # "Шестой октант"
+    elif x > 0 and y < 0:
+        if abs(x) < abs(y):
+            return 2 ** 0.5 * x  # "Седьмой октант"
+    elif x == 0 and y < 0:
+        return 0
+    elif y == 0 and x < 0:
+        return 0
+    return (x ** 2 + y ** 2) ** 0.5
 
 
 def map_value(value, from_min, from_max, to_min, to_max):
@@ -81,10 +130,6 @@ def read_arduino():
 
 
 def cam_and_data_send():
-    context = zmq.Context()
-    socket = context.socket(zmq.PAIR)
-    socket.bind(f"tcp://*:5555")
-
     while True:
         suc, frame = cap.read()
         if not suc:
@@ -114,25 +159,6 @@ def cam_and_data_send():
 
 
 def control_send():
-    context2 = zmq.Context()
-    socket2 = context2.socket(zmq.PAIR)
-    socket2.bind("tcp://*:5556")
-
-    gpio.setwarnings(False)
-    gpio.setmode(gpio.BCM)
-
-    # Настройка GPIO пинов для ШИМ
-    pins = [19, 20, 21, 22]
-    for pin in pins:
-        gpio.setup(pin, gpio.OUT)
-
-    # Создаем объекты PWM для каждого пина с частотой 50 Гц
-    pwm_instances = [gpio.PWM(pin, 50) for pin in pins]
-
-    # Запуск ШИМ сигналов с начальной шириной импульса 0%
-    for pwm in pwm_instances:
-        pwm.start(0)
-
     while True:
         try:
             response = socket2.recv_pyobj()
@@ -155,11 +181,18 @@ def control_send():
             # servos[2].write(depth_speed - roll_speed - pitch_speed)
             # servos[3].write(depth_speed + roll_speed - pitch_speed)
 
-            for pwm in pwm_instances:
-                set_angle(pwm, map_value(float(response['x']), -1, 1, 0, 180))
+            x_value = float(response['x'])
+            y_value = float(response['y'])
+
+            z = map_value(get_value(x_value, y_value), 0, 1, 90, 180)
+
+            set_angle(servo_pwm_instances[0], z)
+
 
         except KeyboardInterrupt:
-            for pwm in pwm_instances:
+            for pwm in servo_pwm_instances:
+                pwm.stop()  # Останавливаем ШИМ на всех портах
+            for pwm in servo_pwm_instances:
                 pwm.stop()  # Останавливаем ШИМ на всех портах
             gpio.cleanup()  # Очистка GPIO
 
