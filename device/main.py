@@ -154,6 +154,8 @@ def cam_and_data_send():
                                              'cpu_temperature': str(psutil.sensors_temperatures()["cpu_thermal"][0][1]),
                                              'cpu_usage': str(psutil.cpu_percent()),
                                              'low_voltage': new_under_voltage().get()}}
+
+        print(data)
         response = socket.recv_string()
         if response == 'c':
             print('Close connection.')
