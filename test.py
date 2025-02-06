@@ -1,6 +1,6 @@
 def get_voltage():
     try:
-        with open("/sys/class/hwmon/hwmon1/in0_input", "r") as f:
+        with open("/sys/class/hwmon/hwmon0/in0_input", "r") as f:
             voltage = int(f.read().strip()) / 1000  # Значение в милливольтах, переводим в вольты
         return voltage
     except FileNotFoundError:
