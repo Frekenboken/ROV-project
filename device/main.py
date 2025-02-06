@@ -1,128 +1,210 @@
-from piservo import Servo
-from gpiozero import CPUTemperature
-import threading
+import base64
+import os
 import cv2
-import sys
-import pynmea2
-import RPi.GPIO as gpio
+import zmq
+import serial
 import time
 import psutil
-from queue import Queue
-import zmq
-import cv2
-import base64
-import serial
-
+import numpy as np
+from threading import Thread
+from piservo import Servo
+import RPi.GPIO as gpio
+from gpiozero import CPUTemperature
 from PID import PIDController
 
+context = zmq.Context()
+socket = context.socket(zmq.PAIR)
+socket.bind(f"tcp://*:5555")
 
-class Nord:
-    def __init__(self, motor_pins, servo_pins, camera_pin):
-        # self.motors = (Servo(motor_pins[0]),
-        #                Servo(motor_pins[1]),
-        #                Servo(motor_pins[2]),
-        #                Servo(motor_pins[3]))
-        # self.servos = (Servo(servo_pins[0]),
-        #                Servo(servo_pins[1]),
-        #                Servo(servo_pins[2]),
-        #                Servo(servo_pins[3]))
-        # self.camera_servo = Servo(camera_pin)
+context2 = zmq.Context()
+socket2 = context2.socket(zmq.PAIR)
+socket2.bind("tcp://*:5556")
 
-        self.ser = serial.Serial('/dev/ttyUSB0', 38400, timeout=1)
+# Настройки
+SERIAL_PORT = "/dev/ttyUSB0"
+SERIAL_BAUDRATE = 115200
+SERIAL_TIMEOUT = 0.5
 
-        self.depth_pid = PIDController(0.01, 0.0001, 0.1)
-        self.depth_pid.set_limit(10, 170)
-        self.depth_pid.set_offset(90)
+# PID-контроллеры
+depth_pid = PIDController(0.01, 0.0001, 0.1)
+depth_pid.set_limit(10, 170)
+depth_pid.set_offset(90)
 
-        self.roll_pid = PIDController(0.01, 0.0001, 0.1)
-        self.roll_pid.set_limit(-5, 5)
-        self.roll_pid.set_offset(0)
+roll_pid = PIDController(0.01, 0.0001, 0.1)
+roll_pid.set_limit(-5, 5)
+roll_pid.set_offset(0)
 
-        self.pitch_pid = PIDController(0.01, 0.0001, 0.1)
-        self.pitch_pid.set_limit(-5, 5)
-        self.pitch_pid.set_offset(0)
+pitch_pid = PIDController(0.01, 0.0001, 0.1)
+pitch_pid.set_limit(-5, 5)
+pitch_pid.set_offset(0)
 
-        self.sensors = []
+# Сервоприводы
+servo_pins = [19, 20, 21, 22]
+motor_pins = [18, 13, 12, 25]
 
-        print('Loading...')
+gpio.setwarnings(False)
+gpio.setmode(gpio.BCM)
 
-        # Инициализация камеры
-        self.cap = cv2.VideoCapture(0)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-        print('Camera is connected!')
+# Настройка GPIO пинов для ШИМ
+for pin in servo_pins:
+    gpio.setup(pin, gpio.OUT)
+for pin in motor_pins:
+    gpio.setup(pin, gpio.OUT)
 
-        self.context = zmq.Context()
-        self.socket = self.context.socket(zmq.REP)
-        self.socket.bind("tcp://*:5555")  # Привязываемся к порту 5555
+# Создаем объекты PWM для каждого пина с частотой 50 Гц
+servo_pwm_instances = [gpio.PWM(pin, 50) for pin in servo_pins]
+motor_pwm_instances = [gpio.PWM(pin, 50) for pin in motor_pins]
 
-        print("Сервер запущен и ожидает запросы...")
+# Запуск ШИМ сигналов с начальной шириной импульса 0%
+for pwm in servo_pwm_instances:
+    pwm.start(0)
+for pwm in motor_pwm_instances:
+    pwm.start(0)
+
+# Инициализация камеры
+cap = cv2.VideoCapture(0)
+
+# Подключение к Arduino
+ser = serial.Serial(SERIAL_PORT, SERIAL_BAUDRATE, timeout=SERIAL_TIMEOUT)
+time.sleep(2)  # Ожидание стабилизации соединения7
 
 
-        print('Done!')
+def get_value(x, y):
+    if x > 0 and y > 0:
+        if abs(x) > abs(y):
+            return x - y  # "Первый октант"
+        else:
+            return y - x  # "Второй октант"
+    elif x < 0 and y > 0:
+        if not (abs(x) < abs(y)):
+            return 2 ** 0.5 * y  # "Четвертый октант"
+    elif x < 0 and y < 0:
+        if abs(x) > abs(y):
+            return 0  # "Пятый октант"
+        else:
+            return 0  # "Шестой октант"
+    elif x > 0 and y < 0:
+        if abs(x) < abs(y):
+            return 2 ** 0.5 * x  # "Седьмой октант"
+    elif x == 0 and y < 0:
+        return 0
+    elif y == 0 and x < 0:
+        return 0
+    return (x ** 2 + y ** 2) ** 0.5
 
-    def update_sensors(self):
-        pass
-        # self.sensors['cpu_temp'] = int(cpu.temperature)
-        # self.sensors['cpu_usage'] = int(psutil.cpu_percent())
 
-    def step(self):
-        depth_speed = self.depth_pid.compute(self.get_sensors('depth'), self.get_sensors('depth_target'))
-        roll_speed = self.roll_pid.compute(self.get_sensors('gx'), self.get_sensors('gx_target'))
-        pitch_speed = self.pitch_pid.compute(self.get_sensors('gy'), self.get_sensors('gy_target'))
+def map_value(value, from_min, from_max, to_min, to_max):
+    # Проверяем, чтобы значения в исходном диапазоне не совпадали
+    if from_min == from_max:
+        raise ValueError("from_min и from_max не могут быть равными.")
 
-        self.servos[0].write(depth_speed - roll_speed + pitch_speed)  # lf
-        self.servos[1].write(depth_speed + roll_speed + pitch_speed)  # rf
-        self.servos[2].write(depth_speed - roll_speed - pitch_speed)  # lb
-        self.servos[3].write(depth_speed + roll_speed - pitch_speed)  # rb
+    # Вычисляем, в какой пропорции находится value в исходном диапазоне
+    from_range = from_max - from_min
+    to_range = to_max - to_min
+    scaled_value = (value - from_min) / from_range  # Нормализуем значение
+    return to_min + (scaled_value * to_range)  # Преобразуем в новый диапазон
 
-    def send_data(self):  # передача всех данных оператору
-        suc, frame = self.cap.read()
+
+# Функция для установки угла для каждого сервомотора
+def set_angle(pwm, angle):
+    duty = (angle / 18) + 2  # Преобразуем угол в коэффициент заполнения
+    pwm.ChangeDutyCycle(duty)
+
+
+def read_arduino():
+    if ser.in_waiting > 0:
+        try:
+            line = ser.readline().decode("utf-8").strip()
+            data = line.split(",")
+
+            if len(data) < 7:
+                return [None] * 7  # Защита от неполных данных
+
+            # print(f"Arduino: {line}")  # Логирование данных
+            ser.reset_input_buffer()  # Очищаем входной буфер
+            return data
+        except Exception as e:
+            print(f"Ошибка чтения с Arduino: {e}")
+
+    return [None] * 7  # Если данных нет, возвращаем пустой список
+
+
+def cam_and_data_send():
+    while True:
+        suc, frame = cap.read()
         if not suc:
-            return
-
-        data_dict = self.get_sensors_dict()
+            print("Ошибка чтения камеры!")
+            break
 
         # Кодирование изображения в base64
         _, encoded_frame = cv2.imencode('.jpg', frame)
         image_str = base64.b64encode(encoded_frame.tobytes()).decode('utf-8')
 
+        arduino_data = read_arduino()
+
         # Отправка данных
-        data = {'image': image_str, 'data_dict': data_dict}
-        response = self.socket.recv_string()
+        data = {'image': image_str, 'data': {'depth': arduino_data[0],
+                                             'dy': arduino_data[1],
+                                             'dx': arduino_data[2],
+                                             'temperature_in': arduino_data[3],
+                                             'humidity_in': arduino_data[4],
+                                             'pressure_in': arduino_data[5],
+                                             'temperature_out': arduino_data[6],
+                                             'cpu_temperature': str(psutil.sensors_temperatures()["cpu_thermal"][0][1]),
+                                             'cpu_usage': str(psutil.cpu_percent())}}
+        response = socket.recv_string()
         if response == 'c':
             print('Close connection.')
-        self.socket.send_pyobj(data)
-        # time.sleep(0.05)  # Задержка для управления частотой передачи кадров
+        socket.send_pyobj(data)
 
-    def start(self):
-        timer_update_sensors = time.time()
-        timer_comm = time.time()
+
+def control_send():
+    while True:
         try:
-            while True:
-                if time.time() - timer_update_sensors > 1:
-                    if self.ser.in_waiting > 0:
-                        line = self.ser.readline().decode('utf-8').rstrip()
-                        print(f"Received: {line}")
-                    timer_update_sensors = time.time()
+            response = socket2.recv_pyobj()
+            print(response)
+            data = {'status': 'ok'}
+            socket2.send_pyobj(data)
 
-                if time.time() - timer_comm > 2:
-                    # Получаем запрос от клиента
-                    message = self.socket.recv_pyobj()
-                    print(f"Получен запрос: {message}")
+            # servos[0].write(map_value(float(response['x']), -1, 1, 0, 180))
 
-                    # Обрабатываем запрос (например, удваиваем каждый элемент списка)
-                    response = [x * 2 for x in message]
+            # depth = 100  # Заглушка (здесь нужно получать реальные данные)
+            # gx = 0
+            # gy = 0
+            #
+            # depth_speed = depth_pid.compute(depth, 120)  # 120 - пример целевого значения
+            # roll_speed = roll_pid.compute(gx, 0)
+            # pitch_speed = pitch_pid.compute(gy, 0)
+            #
+            # servos[0].write(depth_speed - roll_speed + pitch_speed)
+            # servos[1].write(depth_speed + roll_speed + pitch_speed)
+            # servos[2].write(depth_speed - roll_speed - pitch_speed)
+            # servos[3].write(depth_speed + roll_speed - pitch_speed)
 
-                    # Отправляем ответ клиенту
-                    self.socket.send_pyobj(response)
+            x_value = float(response['x'])
+            y_value = float(response['y'])
+
+            set_angle(motor_pwm_instances[0], map_value(get_value(-x_value, -y_value), 0, 1, 80, 100))
+            set_angle(motor_pwm_instances[1], map_value(get_value(x_value, -y_value), 0, 1, 80, 100))
+            set_angle(motor_pwm_instances[2], map_value(get_value(-x_value, y_value), 0, 1, 80, 100))
+            set_angle(motor_pwm_instances[3], map_value(get_value(x_value, y_value), 0, 1, 80, 100))
+
+            # set_angle(servo_pwm_instances[0], )
+
+
         except KeyboardInterrupt:
-            print("Программа остановлена пользователем")
-        finally:
-            # Закрываем порт
-            self.ser.close()
+            for pwm in servo_pwm_instances:
+                pwm.stop()  # Останавливаем ШИМ на всех портах
+            for pwm in servo_pwm_instances:
+                pwm.stop()  # Останавливаем ШИМ на всех портах
+            gpio.cleanup()  # Очистка GPIO
 
 
-if __name__ == '__main__':
-    nord = Nord((1, 2, 3, 4), (5, 6, 7, 8), 9)
-    nord.start()
+cdt = Thread(target=cam_and_data_send)
+# ct = Thread(target=control_send)
+cdt.start()
+# ct.start()
+
+control_send()
+
+print("Сервер запущен!")

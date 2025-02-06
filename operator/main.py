@@ -1,8 +1,7 @@
-from PySide6.QtCore import QThread, Signal, QSize
-from PySide6.QtGui import QImage, QPixmap, QColor, Qt
-from PySide6.QtWidgets import QApplication, QMainWindow
-
-from designs.UI import Ui_MainWindow
+import numpy as np
+from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout, QGridLayout, QFrame, QPushButton, QHBoxLayout
+from PyQt6.QtGui import QFont, QImage, QPixmap
+from PyQt6.QtCore import QThread, pyqtSignal, pyqtSlot, Qt, QSize, QTimer
 
 import sys
 from widgets.CircularBar import QCircularBar
@@ -15,241 +14,247 @@ import zmq
 import subprocess
 import os
 
+from widgets.Joystick import JoystickWidget
 
-
-def get_current_wifi():
-    try:
-        result = subprocess.check_output(['netsh', 'wlan', 'show', 'interfaces'])
-        result = result.decode('latin-1', errors='ignore')
-        for line in result.split('\n'):
-            if 'SSID' in line and 'BSSID' not in line:
-                return line.split(':')[1].strip()
-    except subprocess.CalledProcessError:
-        return None
-
-def available_wifi():
-    result = subprocess.check_output(['netsh', 'wlan', 'show', 'networks'], encoding='cp1251', errors='ignore')
-    networks = []
-    for line in result.split('\n'):
-        if 'SSID ' in line:
-            ssid = line.split(':')[1].strip()
-            if ssid:  # Добавляем только непустые SSID
-                networks.append(ssid)
-    return networks
-
-
-class Gui(QMainWindow):
+class TnpaControlUI(QWidget):
     def __init__(self):
-        super(Gui, self).__init__()
-        self.ui = Ui_MainWindow()
-        self.ui.setupUi(self)
-        self.setWindowTitle('NORD Monitor')
-        self.showMaximized()
+        super().__init__()
+        self.setWindowTitle("Управление ТНПА")
+        # self.showFullScreen()
+        self.setStyleSheet("background-color: #010107; color: white;")
 
-        self.cpu_usage_bar = QCircularBar()
-        self.cpu_temp_bar = QCircularBar()
-        self.roll_indicator = QAngleBar()
-        self.diff_indicator = QAngleBar()
+        main_layout = QHBoxLayout()
 
-        self.cpu_temp_bar.setFixedSize(QSize(150, 150))
-        self.cpu_usage_bar.setFixedSize(QSize(150, 150))
-        self.cpu_temp_bar.setDataColors([
-            (0.0, QColor(0, 120, 255)),  # Красный цвет
-            (1.0, QColor(215, 38, 56))  # Синий цвет
-        ])
-        self.cpu_usage_bar.setDataColors([
-            (0.0, QColor(0, 120, 255)),  # Красный цвет
-            (1.0, QColor(215, 38, 56))  # Синий цвет
-        ])
-        self.cpu_temp_bar.set_unit('°C')
+        # Фрейм для видео
+        self.video_label = QLabel()
+        self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.video_label.setStyleSheet("border: none; border: 2px solid black;")
+        self.video_label.setFixedSize(960, 720)  # Фон черный
+        main_layout.addWidget(self.video_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        self.roll_indicator.setOffset(90)
-        self.diff_indicator.setOffset(90)
+        right_panel = QVBoxLayout()
 
-        self.roll_indicator.setLetters('L', 'R')
-        self.diff_indicator.setLetters('B', 'F')
+        # Грид для датчиков
+        sensor_layout = QGridLayout()
 
-        self.roll_indicator.setFixedSize(QSize(170, 170))
-        self.diff_indicator.setFixedSize(QSize(170, 170))
+        self.sensors = {
+            "Глубина": QLabel("0 м"),
+            "Ось X": QLabel("0°"),
+            "Ось Y": QLabel("0°"),
+            "Температура на борту": QLabel("0°C"),
+            "Температура за бортом": QLabel("0°C"),
+            "Влажность": QLabel("0%"),
+            "Давление на борту": QLabel("0 Па"),
+            "Температура CPU": QLabel("0°C"),
+            "Загрузка CPU": QLabel("0%"),
+        }
 
-        self.ui.cpuusageframe.layout().addWidget(self.cpu_usage_bar)
-        self.ui.cputempframe.layout().addWidget(self.cpu_temp_bar)
-        self.ui.rollframe.layout().addWidget(self.roll_indicator)
-        self.ui.diffframe.layout().addWidget(self.diff_indicator)
+        row, col = 0, 0
+        for name, label in self.sensors.items():
+            title = QLabel(name)
+            title.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+            label.setFont(QFont("Arial", 12))
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Создаем и запускаем поток для видео
-        self.receive_thread = ReceiveThread("tcp://localhost:5555")
-        self.receive_thread.change_pixmap_signal.connect(self.update_image)
-        self.receive_thread.update_data_signal.connect(self.update_data)
-        self.receive_thread.start()
+            sensor_layout.addWidget(title, row, col)
+            sensor_layout.addWidget(label, row + 1, col)
 
-        self.connection = False
-        self.ui.pushButton.clicked.connect(self.switch_connect_to_device)
-        self.ui.net.setText(get_current_wifi())
-        self.prev_network = get_current_wifi()
+            col += 1
+            if col > 1:
+                col = 0
+                row += 2
 
-    def switch_connect_to_device(self):
-        if not self.connection:
-            if get_current_wifi() != 'raspberry':
-                if 'raspberry' not in available_wifi():
-                    self.ui.status.setText('Сеть не найдена.')
-                    return None
+        right_panel.addLayout(sensor_layout)
 
-                os.system(f'''cmd /c "netsh wlan connect name={'raspberry'}"''')
-                for i in range(100):
-                    time.sleep(0.05)
-                    if get_current_wifi() == 'raspberry':
-                        break
-                else:
-                    self.ui.status.setText('Время ожидания истекло.')
-                    return None
-                self.ui.net.setText(get_current_wifi())
+        # Элементы управления ТНПА
+        control_layout = QVBoxLayout()
 
-            self.receive_thread.connect_device()
-            self.connection = True
-            self.ui.pushButton.setText('Отключиться')
-            self.ui.pushButton.setStyleSheet(u"background-color: rgb(230, 72, 60);\n"
-                                             "border-radius: 2px;\n"
-                                             "padding: 3px;\n"
-                                             "font-size: 17px;")
-            self.ui.status.setText('OK')
-        else:
-            self.receive_thread.disconnect_device()
-            self.connection = False
-            self.ui.pushButton.setText('Подключиться')
-            self.ui.pushButton.setStyleSheet(u"background-color: rgb(7, 145, 92);\n"
-                                             "border-radius: 2px;\n"
-                                             "padding: 3px;\n"
-                                             "font-size: 17px;")
-            if self.prev_network:
-                os.system(f'''cmd /c "netsh wlan connect name={self.prev_network}"''')
-                for i in range(100):
-                    time.sleep(0.05)
-                    if get_current_wifi() == self.prev_network:
-                        break
-                else:
-                    self.ui.status.setText('Время ожидания истекло.')
+        movement_layout = QGridLayout()
+        #
+        # self.btn_forward = QPushButton("▲")
+        # self.btn_backward = QPushButton("▼")
+        # self.btn_left = QPushButton("⇦")
+        # self.btn_right = QPushButton("⇨")
+        # self.btn_turn_left = QPushButton("↺")
+        # self.btn_turn_right = QPushButton("↻")
+        # self.btn_stop = QPushButton("■")
 
-            self.ui.net.setText(get_current_wifi())
+        self.joystick = JoystickWidget()
+        control_layout.addWidget(self.joystick, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        # movement_layout.addWidget(self.btn_forward, 0, 1)
+        # movement_layout.addWidget(self.btn_left, 1, 0)
+        # movement_layout.addWidget(self.btn_stop, 1, 1)
+        # movement_layout.addWidget(self.btn_right, 1, 2)
+        # movement_layout.addWidget(self.btn_backward, 2, 1)
+
+        servo_layout = QGridLayout()
+
+        self.servo_buttons = {
+            "Servo1+": QPushButton("▲"), "Servo1-": QPushButton("▼"),
+            "Servo2+": QPushButton("▲"), "Servo2-": QPushButton("▼"),
+            "Servo3+": QPushButton("▲"), "Servo3-": QPushButton("▼"),
+            "Servo4+": QPushButton("▲"), "Servo4-": QPushButton("▼"),
+        }
+
+        servo_layout.addWidget(self.servo_buttons["Servo1+"], 0, 0)
+        servo_layout.addWidget(self.servo_buttons["Servo1-"], 1, 0)
+        servo_layout.addWidget(self.servo_buttons["Servo2+"], 0, 1)
+        servo_layout.addWidget(self.servo_buttons["Servo2-"], 1, 1)
+        servo_layout.addWidget(self.servo_buttons["Servo3+"], 2, 0)
+        servo_layout.addWidget(self.servo_buttons["Servo3-"], 3, 0)
+        servo_layout.addWidget(self.servo_buttons["Servo4+"], 2, 1)
+        servo_layout.addWidget(self.servo_buttons["Servo4-"], 3, 1)
+
+        self.btn_exit = QPushButton("Выход")
+        self.btn_connect = QPushButton("Подключиться")
+
+        for btn in list(self.servo_buttons.values()):
+            btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+            btn.setStyleSheet("background-color: #333; color: white; border-radius: 5px")
+            btn.setFixedSize(50, 50)
+
+        control_layout.addLayout(movement_layout)
+        control_layout.addLayout(servo_layout)
+
+        self.btn_exit.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        self.btn_exit.setStyleSheet("background-color: #333; color: white; padding: 5px;")
+        control_layout.addWidget(self.btn_exit, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.btn_connect.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        self.btn_connect.setStyleSheet("background-color: #333; color: white; padding: 5px;")
+        control_layout.addWidget(self.btn_connect, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        right_panel.addLayout(control_layout)
+
+        main_layout.addLayout(right_panel)
+
+        self.btn_exit.clicked.connect(self.close)
+        self.btn_connect.clicked.connect(self.start_client)
+
+        self.setLayout(main_layout)
+
+        self.cam_thread = CamThread()
+        self.cam_thread.change_pixmap_signal.connect(self.update_image)
+        self.cam_thread.update_sensors_display.connect(self.update_sensor)
+
+        self.control_thread = ControlThread()
+
+        self.joystick.valueChanged.connect(lambda x, y: self.control_thread.receive_data.emit({'x': f'{x:.2f}', 'y':f'{y:.2f}'}))
 
     def update_image(self, image):
-        self.ui.label.setPixmap(QPixmap.fromImage(image))
+        self.video_label.setPixmap(QPixmap.fromImage(image))
 
-    def update_data(self, data):
-        self.roll_indicator.setAngle(data['gx'])
-        self.diff_indicator.setAngle(data['gy'])
-        self.cpu_temp_bar.setValue(data['cpu_temp'])
-        self.cpu_usage_bar.setValue(data['cpu_usage'])
+    def update_sensor(self, sensor_name, value):
+        if sensor_name in self.sensors:
+            self.sensors[sensor_name].setText(value)
 
-        self.ui.lat.setText(str(data['lat']))
-        self.ui.lon.setText(str(data['lon']))
-        self.ui.speed.setText(str(data['speed']))
-        self.ui.sats.setText(str(data['sat']))
-
-        self.ui.depth.setText(str(data['depth']))
-        self.ui.depth_target.setText(str(data['depth_target']))
-
-        self.ui.time.setText(str(data['time']))
-
-        self.ui.humidity_on.setText(str(data['humidity_on']))
-        self.ui.pressure_on.setText(str(data['pressure_on']))
-        self.ui.temp_on.setText(str(data['temp_on']))
-
-        self.ui.temp_out.setText(str(data['temp_out']))
+    def start_client(self):
+        self.cam_thread.start()  # Запускаем поток
+        self.control_thread.start()
 
     def closeEvent(self, event):
-        print('close')
-        self.receive_thread.close()
+        if self.cam_thread.isRunning():
+            self.cam_thread.stop()
+        if self.control_thread.isRunning():
+            self.control_thread.stop()
         super().closeEvent(event)
 
 
-class ReceiveThread(QThread):
-    change_pixmap_signal = Signal(QImage)
-    update_data_signal = Signal(dict)
 
-    def __init__(self, address):
-        super(ReceiveThread, self).__init__()
-        self.socket = self.context = None
-        self.address = address
-        self.response = 'ok'
-        self.req = False
-        self.connection = False
-        self.cl = False
+class CamThread(QThread):
+    change_pixmap_signal = pyqtSignal(QImage)
+    update_sensors_display = pyqtSignal(str, str)
 
-    def connect_device(self):
-        self.req = True
+    def __init__(self):
+        super(CamThread, self).__init__()
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.PAIR)
+        self.socket.connect("tcp://192.168.0.9:5555")
 
-    def disconnect_device(self):
-        self.connection = False
+        self.running = True
 
     def run(self):
-        try:
-            context = zmq.Context()
-            socket = context.socket(zmq.REQ)
-            socket.connect("tcp://localhost:5555")  # Подключаемся к серверу на порту 5555
-            while True:
-                # Пример списка данных для отправки
-                data_list = [1, 2, 3, 4, 5]
+        while self.running:
+            try:
+                self.socket.send_string("check")
+                data = self.socket.recv_pyobj()
 
-                # Отправляем запрос серверу
-                socket.send_pyobj(data_list)
-                print(f"Отправлен запрос: {data_list}")
+                # Декодирование изображения из base64
+                image_bytes = base64.b64decode(data['image'])
+                frame = cv2.imdecode(frombuffer(image_bytes, uint8), cv2.IMREAD_COLOR)
 
-                # Получаем ответ от сервера
-                response = socket.recv_pyobj()
-                print(f"Получен ответ: {response}")
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                h, w, ch = frame.shape
+                bytes_per_line = ch * w
+                convert_to_qt_format = QImage(frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+                p = convert_to_qt_format.scaled(1280, 720, Qt.AspectRatioMode.KeepAspectRatio)
+                self.change_pixmap_signal.emit(p)
 
-                # print('go')
-                # # time.sleep(0.4)
-                # print('кидаю респонс')
-                # self.socket.send_string(self.response)
-                # print('скинул респонс')
-                # print('получаю дату')
-                # data = self.socket.recv_pyobj()
-                # print('Получил дату')
-                #
-                # # Декодирование изображения из base64
-                # image_bytes = base64.b64decode(data['image'])
-                # frame = cv2.imdecode(frombuffer(image_bytes, uint8), cv2.IMREAD_COLOR)
-                #
-                # # Используйте данные из списка, например:
-                # data_dict = data['data_dict']
-                # print("Received Data List:", data_dict)
-                #
-                # # Отображение изображения
-                # # time.sleep(0.1)
-                #
-                # rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                # h, w, ch = rgb_image.shape
-                # bytes_per_line = ch * w
-                # convert_to_qt_format = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
-                # p = convert_to_qt_format.scaled(960, 540, Qt.KeepAspectRatio)
-                # self.change_pixmap_signal.emit(p)
-                # self.update_data_signal.emit(data_dict)
-        except zmq.ZMQError as e:
-            print(f"Ошибка ZeroMQ: {e}")
+                data_dict = data['data']
+                # print("Received Data Dict:", data_dict)
 
-    def set_response(self, response):
-        self.response = response
+                if all(data_dict.values()):
+                    self.update_sensors_display.emit("Глубина", data_dict['depth'])
+                    self.update_sensors_display.emit("Ось X", data_dict['dx'])
+                    self.update_sensors_display.emit("Ось Y", data_dict['dy'])
+                    self.update_sensors_display.emit("Температура на борту", data_dict['temperature_in'])
+                    self.update_sensors_display.emit("Температура за бортом", data_dict['temperature_out'])
+                    self.update_sensors_display.emit("Влажность", data_dict['humidity_in'])
+                    self.update_sensors_display.emit("Давление на борту", data_dict['pressure_in'])
+                    self.update_sensors_display.emit("Температура CPU", data_dict['cpu_temperature'])
+                    self.update_sensors_display.emit("Загрузка CPU", data_dict['cpu_usage'])
 
-    def zmq_connect_to(self, address):
-        context = zmq.Context()
-        socket = context.socket(zmq.PAIR)
-        socket.connect(address)
-        return socket, context
+            except Exception as e:
+                print(e)
 
-    def close(self):
-        # self.set_response('c')
-        # time.sleep(0.3)
-        self.cl = True
-        self.socket.setsockopt(zmq.LINGER, 0)
         self.socket.close()
         self.context.term()
-        self.wait()  # Ждем завершения потока
-        self.quit()
+
+    def stop(self):
+        self.running = False
+        self.wait()
 
 
-app = QApplication(sys.argv)
-window = Gui()
-window.show()
-sys.exit(app.exec())
+class ControlThread(QThread):
+    receive_data = pyqtSignal(dict)
+
+    def __init__(self):
+        super(ControlThread, self).__init__()
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.PAIR)
+        self.socket.connect("tcp://192.168.0.9:5556")
+
+        self.control_data = {'x': '0', 'y': '0', 'target_depth': '100'}
+
+        self.running = True
+
+        self.receive_data.connect(self.handle_data)
+
+    def run(self):
+        while self.running:
+            try:
+                self.socket.send_pyobj(self.control_data)
+                data = self.socket.recv_pyobj()
+
+            except Exception as e:
+                print(e)
+
+        self.socket.close()
+        self.context.term()
+
+    @pyqtSlot(dict)
+    def handle_data(self, data: dict):
+        for key, value in data.items():
+            self.control_data[key] = value
+        print(self.control_data)
+
+    def stop(self):
+        self.running = False
+        self.wait()
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = TnpaControlUI()
+    window.show()
+    sys.exit(app.exec())
