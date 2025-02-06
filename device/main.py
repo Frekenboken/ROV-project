@@ -153,7 +153,7 @@ def cam_and_data_send():
                                              'temperature_out': arduino_data[6],
                                              'cpu_temperature': str(psutil.sensors_temperatures()["cpu_thermal"][0][1]),
                                              'cpu_usage': str(psutil.cpu_percent()),
-                                             }}
+                                             'low_voltage': str(new_under_voltage().get())}}
 
         response = socket.recv_string()
         if response == 'c':
