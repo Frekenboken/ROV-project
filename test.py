@@ -1,14 +1,13 @@
-import subprocess
+def get_voltage():
+    try:
+        with open("/sys/class/hwmon/hwmon1/in0_input", "r") as f:
+            voltage = int(f.read().strip()) / 1000  # Значение в милливольтах, переводим в вольты
+        return voltage
+    except FileNotFoundError:
+        print("Файл с данными о напряжении не найден. Попробуйте hwmon0 или другие индексы.")
+        return None
 
 
-def wifi_names():
-    result = subprocess.check_output(['netsh', 'wlan', 'show', 'networks'], encoding='cp1251', errors='ignore')
-    networks = []
-    for line in result.split('\n'):
-        if 'SSID ' in line:
-            ssid = line.split(':')[1].strip()
-            if ssid:  # Добавляем только непустые SSID
-                networks.append(ssid)
-    return networks
-
-print(o())
+voltage = get_voltage()
+if voltage:
+    print(f"Напряжение питания: {voltage:.3f} В")
