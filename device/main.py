@@ -10,6 +10,7 @@ from threading import Thread
 from piservo import Servo
 import RPi.GPIO as gpio
 from gpiozero import CPUTemperature
+from rpi_bad_power import new_under_voltage
 from PID import PIDController
 
 context = zmq.Context()
@@ -151,7 +152,8 @@ def cam_and_data_send():
                                              'pressure_in': arduino_data[5],
                                              'temperature_out': arduino_data[6],
                                              'cpu_temperature': str(psutil.sensors_temperatures()["cpu_thermal"][0][1]),
-                                             'cpu_usage': str(psutil.cpu_percent())}}
+                                             'cpu_usage': str(psutil.cpu_percent()),
+                                             'low_voltage': new_under_voltage().get()}}
         response = socket.recv_string()
         if response == 'c':
             print('Close connection.')
@@ -189,7 +191,15 @@ def control_send():
             set_angle(motor_pwm_instances[2], map_value(get_value(-x_value, y_value), 0, 1, 80, 100))
             set_angle(motor_pwm_instances[3], map_value(get_value(x_value, y_value), 0, 1, 80, 100))
 
-            # set_angle(servo_pwm_instances[0], )
+            s1_value = int(response['s1'])
+            s2_value = int(response['s2'])
+            s3_value = int(response['s3'])
+            s4_value = int(response['s4'])
+
+            set_angle(servo_pwm_instances[0], s1_value)
+            set_angle(servo_pwm_instances[1], s2_value)
+            set_angle(servo_pwm_instances[2], s3_value)
+            set_angle(servo_pwm_instances[3], s4_value)
 
 
         except KeyboardInterrupt:

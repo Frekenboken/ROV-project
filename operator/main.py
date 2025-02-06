@@ -140,6 +140,23 @@ class TnpaControlUI(QWidget):
         self.control_thread = ControlThread()
 
         self.joystick.valueChanged.connect(lambda x, y: self.control_thread.receive_data.emit({'x': f'{x:.2f}', 'y':f'{y:.2f}'}))
+        self.servo_buttons["Servo1+"].clicked.connect(lambda: self.control_thread.receive_data.emit({'s1': '145'}))
+        self.servo_buttons["Servo1-"].clicked.connect(lambda: self.control_thread.receive_data.emit({'s1': '35'}))
+        self.servo_buttons["Servo2+"].clicked.connect(lambda: self.control_thread.receive_data.emit({'s2': '145'}))
+        self.servo_buttons["Servo2-"].clicked.connect(lambda: self.control_thread.receive_data.emit({'s2': '35'}))
+        self.servo_buttons["Servo3+"].clicked.connect(lambda: self.control_thread.receive_data.emit({'s3': '145'}))
+        self.servo_buttons["Servo3-"].clicked.connect(lambda: self.control_thread.receive_data.emit({'s3': '35'}))
+        self.servo_buttons["Servo4+"].clicked.connect(lambda: self.control_thread.receive_data.emit({'s4': '145'}))
+        self.servo_buttons["Servo4-"].clicked.connect(lambda: self.control_thread.receive_data.emit({'s4': '35'}))
+
+        self.servo_buttons["Servo1+"].released.connect(lambda: self.control_thread.receive_data.emit({'s1': '90'}))
+        self.servo_buttons["Servo1-"].released.connect(lambda: self.control_thread.receive_data.emit({'s1': '90'}))
+        self.servo_buttons["Servo2+"].released.connect(lambda: self.control_thread.receive_data.emit({'s2': '90'}))
+        self.servo_buttons["Servo2-"].released.connect(lambda: self.control_thread.receive_data.emit({'s2': '90'}))
+        self.servo_buttons["Servo3+"].released.connect(lambda: self.control_thread.receive_data.emit({'s3': '90'}))
+        self.servo_buttons["Servo3-"].released.connect(lambda: self.control_thread.receive_data.emit({'s3': '90'}))
+        self.servo_buttons["Servo4+"].released.connect(lambda: self.control_thread.receive_data.emit({'s4': '90'}))
+        self.servo_buttons["Servo4-"].released.connect(lambda: self.control_thread.receive_data.emit({'s4': '90'}))
 
     def update_image(self, image):
         self.video_label.setPixmap(QPixmap.fromImage(image))
@@ -224,7 +241,7 @@ class ControlThread(QThread):
         self.socket = self.context.socket(zmq.PAIR)
         self.socket.connect("tcp://192.168.0.9:5556")
 
-        self.control_data = {'x': '0', 'y': '0', 'target_depth': '100'}
+        self.control_data = {'x': '0', 'y': '0', 'target_depth': '100', 's1': '90', 's2': '90', 's3': '90', 's4': '90'}
 
         self.running = True
 
